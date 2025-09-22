@@ -1,0 +1,22 @@
+[package]
+name = "dsa-judge"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Process execution and timing
+tokio = { version = "1.0", features = ["full"] }
+# JSON serialization for communication with Electron
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# File system operations
+tempfile = "3.0"
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+# Command execution
+which = "4.0"
+# Memory and time measurement
+sysinfo = "0.30"
+# Async runtime
+futures = "0.3"
