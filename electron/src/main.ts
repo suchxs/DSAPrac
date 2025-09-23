@@ -63,6 +63,16 @@ app.whenReady().then(() => {
     app.quit();
   });
 
+  ipcMain.on('open-settings', () => {
+    dialog.showMessageBox(mainWindow!, {
+      type: 'info',
+      title: 'Settings',
+      message: 'Settings',
+      detail: 'Settings panel coming soon! This will include theme options, difficulty settings, and more customization features.',
+      buttons: ['OK']
+    });
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
