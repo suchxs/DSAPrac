@@ -7,4 +7,4 @@ Reviewer App for my [Notes](https://github.com/suchxs/DSA) <br>
 -- To be Updated
 
 ## 🛠 Language and Framework
-![Tech Stack](https://skills-icons.vercel.app/api/icons?i=electron,typescript,tailwind,rust)
+![Tech Stack](https://skills-icons.vercel.app/api/icons?i=electron,typescript,js,vite,tailwind,rust)
