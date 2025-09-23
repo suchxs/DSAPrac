@@ -7,16 +7,21 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build:main": "tsc -p tsconfig.main.json",
+    "build:css": "npx @tailwindcss/cli@latest -i ./static/styles.css -o ./static/dist.css --watch",
+    "build:css:once": "npx @tailwindcss/cli@latest -i ./static/styles.css -o ./static/dist.css",
     "watch-main": "tsc -w -p tsconfig.main.json",
     "start": "electron build/main.js",
-    "dev": "npm run build:main && npm run start"
+    "dev": "npm run build:main && npm run build:css:once && npm run start",
+    "dev:all": "concurrently \"npm run watch-main\" \"npm run build:css\" \"npm run start\""
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^24.5.2",
+    "concurrently": "^9.2.1",
     "electron": "^28.3.3",
+    "tailwindcss": "^4.1.13",
     "typescript": "^5.9.2"
   }
 }

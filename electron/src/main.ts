@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -53,6 +53,9 @@ function startBackend() {
 }
 
 app.whenReady().then(() => {
+  // Remove menu bar
+  Menu.setApplicationMenu(null);
+  
   startBackend();
   createWindow();
 
