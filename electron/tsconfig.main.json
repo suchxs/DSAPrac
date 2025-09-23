@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "build",
+    "module": "CommonJS",
+    "noEmit": false,
+    "isolatedModules": false
+  },
+  "include": ["src/main.ts"],
+  "exclude": ["src/renderer.tsx", "src/**/*.tsx", "src/**/*.html"]
+}

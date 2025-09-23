@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DSAPrac</title>
+    <link href="./dist.css" rel="stylesheet">
+  </head>
+  <body class="natural-bg min-h-screen flex items-center justify-center text-white relative overflow-hidden">
+    <!-- Background GIF -->
+    <img class="background-video fixed top-0 left-0 w-full h-full object-cover -z-20 opacity-70" src="assets/background.gif" alt="Background">
+    
+    <!-- Main Container -->
+    <div class="glass-card p-12 text-center min-w-[420px] max-w-[500px] relative">
+      <!-- Top highlight line -->
+      <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+      
+      <!-- Title -->
+      <h1 class="text-5xl font-medium tracking-tight mb-6 text-white text-glow">
+        DSAPrac <span class="text-blue-200 font-normal">beta</span>
+      </h1>
+      
+      <!-- Author -->
+      <p class="mt-6 text-lg opacity-95 font-normal">
+        made by <strong>
+          <a href="https://github.com/suchxs" target="_blank" class="text-blue-200 hover:text-white transition-colors duration-300 font-medium">
+            suchxs
+          </a>
+        </strong>
+      </p>
+      
+      <!-- Changelog -->
+      <div class="changelog-card mt-8 p-6 relative">
+        <!-- Changelog highlight line -->
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+        
+        <h3 class="text-xl font-semibold text-white mb-5 flex items-center gap-3">
+          <span class="w-5 h-5 bg-blue-400 rounded-sm"></span>
+          Changelog
+        </h3>
+        
+        <ul class="space-y-3">
+          <li class="text-blue-100 pl-6 relative text-base font-normal">
+            <span class="absolute left-0 text-blue-300 text-lg">•</span>
+            Nothing to do for now
+          </li>
+        </ul>
+      </div>
+      
+      <!-- Exit Button -->
+      <button 
+        onclick="exitApp()" 
+        class="button-modern mt-10 px-10 py-4 text-white font-semibold text-lg rounded-2xl"
+      >
+        Exit
+      </button>
+    </div>
+    
+    <script>
+      function exitApp() {
+        // @ts-expect-error exposed via preload
+        window.api?.exit?.();
+      }
+    </script>
+  </body>
+</html>
