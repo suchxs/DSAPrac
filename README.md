@@ -5,7 +5,9 @@ Questions are separated by tags , difficulty level, and according to which secti
 >I hope this Helps people pass DSA :)
 
 ## Setup
--- To be Updated
+1. Download and Run Installer
+2. Run App
+3. Choose Mode and Difficulty Level
 
 ## 🛠 Language and Framework
 ![Tech Stack](https://skills-icons.vercel.app/api/icons?i=electron,typescript,js,vite,tailwind,rust)
