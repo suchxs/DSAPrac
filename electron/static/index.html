@@ -29,16 +29,23 @@
         </strong>
       </p>
       
-      <!-- Changelog -->
-      <div class="changelog-card mt-8 p-6 relative">
-        <!-- Changelog highlight line -->
+      <!-- Select Mode -->
+      <div class="mt-8 p-6 rounded-2xl border border-white/15 bg-black/25 backdrop-blur-xl shadow-lg relative">
         <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
-        
+        <h3 class="text-lg font-semibold text-white mb-4">Select Mode</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button onclick="openPractice()" class="button-modern w-full py-3 text-white font-medium text-lg rounded-2xl">Practice</button>
+          <button onclick="openExam()" class="button-modern w-full py-3 text-white font-medium text-lg rounded-2xl">Exam</button>
+        </div>
+      </div>
+
+      <!-- Changelog (temporarily disabled)
+      <div class="changelog-card mt-8 p-6 relative">
+        <div class="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
         <h3 class="text-lg font-semibold text-white mb-3 flex items-center gap-2">
           <span class="w-3 h-3 bg-blue-400 rounded-sm"></span>
           Changelog
         </h3>
-        
         <ul class="space-y-2">
           <li class="text-blue-100 pl-4 relative text-sm font-normal">
             <span class="absolute left-0 text-blue-300 text-sm">•</span>
@@ -46,22 +53,23 @@
           </li>
         </ul>
       </div>
+      -->
       
-      <!-- Settings Button -->
-      <button 
-        onclick="openSettings()" 
-        class="button-modern mt-6 px-6 py-2 text-white font-medium text-base rounded-xl mr-3"
-      >
-        Settings
-      </button>
-      
-      <!-- Exit Button -->
-      <button 
-        onclick="exitApp()" 
-        class="button-modern mt-6 px-6 py-2 text-white font-medium text-base rounded-xl"
-      >
-        Exit
-      </button>
+      <!-- Utility Actions -->
+      <div class="mt-6 flex items-center justify-center gap-3">
+        <button 
+          onclick="openSettings()" 
+          class="button-modern px-6 py-2 text-white font-medium text-base rounded-xl"
+        >
+          Settings
+        </button>
+        <button 
+          onclick="exitApp()" 
+          class="button-modern px-6 py-2 text-white font-medium text-base rounded-xl"
+        >
+          Exit
+        </button>
+      </div>
     </div>
     
     <script>
@@ -73,6 +81,16 @@
       function openSettings() {
         // @ts-expect-error exposed via preload
         window.api?.openSettings?.();
+      }
+
+      function openPractice() {
+        // @ts-expect-error exposed via preload
+        window.api?.openPractice?.();
+      }
+
+      function openExam() {
+        // @ts-expect-error exposed via preload
+        window.api?.openExam?.();
       }
     </script>
   </body>

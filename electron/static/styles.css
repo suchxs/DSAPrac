@@ -59,6 +59,15 @@
   .button-modern:hover::before {
     left: 100%;
   }
+
+  /* Disabled state: prevent hover animations */
+  .button-modern[disabled],
+  .button-modern[disabled]:hover {
+    transform: none !important;
+    box-shadow: none !important;
+    border-color: rgba(255, 255, 255, 0.3) !important;
+    background: rgba(0, 0, 0, 0.4) !important;
+  }
   
   .changelog-card {
     background: rgba(0, 0, 0, 0.25);
@@ -67,4 +76,19 @@
     border-radius: 16px;
     box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
   }
+
+  /* Improve visibility of low-activity heatmap cells */
+  .heatmap-cell {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  /* Heatmap intensity levels (avoid Tailwind purge issues) */
+  .heatmap-l0 { background: rgba(255, 255, 255, 0.06); }
+  .heatmap-l1 { background: rgba(59, 130, 246, 0.25); }
+  .heatmap-l2 { background: rgba(59, 130, 246, 0.45); }
+  .heatmap-l3 { background: rgba(59, 130, 246, 0.65); }
+  .heatmap-l4 { background: rgba(59, 130, 246, 0.85); }
 }

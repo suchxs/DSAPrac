@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Practice Mode</title>
+    <link href="./dist.css" rel="stylesheet">
+  </head>
+  <body class="natural-bg min-h-screen text-white relative overflow-hidden">
+    <img class="background-video fixed top-0 left-0 w-full h-full object-cover -z-20 opacity-60" src="assets/background.gif" alt="Background">
+
+    <div class="container mx-auto px-6 py-8 relative">
+      <div class="mb-6 flex items-center justify-between">
+        <div>
+          <h1 class="text-3xl font-semibold tracking-tight">Practice Mode</h1>
+          <p class="opacity-80 text-sm mt-1">Select tags below or answer each practical problem.</p>
+        </div>
+        <button onclick="(window.api && window.api.openMenu && window.api.openMenu())" class="button-modern px-4 py-2 rounded-xl">Back</button>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <!-- Theory Section -->
+        <div class="glass-card p-6">
+          <h2 class="text-lg font-semibold mb-1">Theory</h2>
+          <p class="text-sm opacity-80 mb-4">Multiple-choice questions. Select tags below.</p>
+
+          <!-- Scrollable tag list -->
+          <div class="space-y-6 max-h-96 overflow-y-auto pr-2">
+            <!-- Section 1 -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-medium opacity-90">Section 1</h3>
+                <button class="text-blue-200 hover:text-white text-sm" onclick="toggleSection('s1')">Toggle all</button>
+              </div>
+              <div id="s1" class="grid grid-cols-1 gap-2">
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Arrays"> Arrays</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Linked Lists"> Linked Lists</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Cursor-Based"> Cursor-Based</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Stack"> Stack</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Queue"> Queue</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="ADT List"> ADT List</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Section 2 -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-medium opacity-90">Section 2</h3>
+                <button class="text-blue-200 hover:text-white text-sm" onclick="toggleSection('s2')">Toggle all</button>
+              </div>
+              <div id="s2" class="grid grid-cols-1 gap-2">
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="SET and ADT Set"> SET and ADT Set</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="ADT Dictionary"> ADT Dictionary</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="ADT Priority Queue"> ADT Priority Queue</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Section 3 -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <h3 class="font-medium opacity-90">Section 3</h3>
+                <button class="text-blue-200 hover:text-white text-sm" onclick="toggleSection('s3')">Toggle all</button>
+              </div>
+              <div id="s3" class="grid grid-cols-1 gap-2">
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="ADT Tree and Implementations"> ADT Tree and Implementations</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Binary Search Tree (BST)"> Binary Search Tree (BST)</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Heapsort Sorting Technique"> Heapsort Sorting Technique</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Directed and Undirected Graph"> Directed and Undirected Graph</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Graph Algorithms"> Graph Algorithms</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 flex items-center justify-end gap-3">
+            <button id="start-theory" class="button-modern px-5 py-2 rounded-xl opacity-50 cursor-not-allowed" disabled>Start Theory Quiz</button>
+          </div>
+        </div>
+
+        <!-- Practical Section -->
+        <div class="glass-card p-6">
+          <h2 class="text-lg font-semibold mb-1">Practical</h2>
+          <p class="text-sm opacity-80 mb-4">Git Gud.</p>
+
+          <div class="max-h-96 overflow-y-auto pr-2 space-y-2">
+            <div class="p-4 rounded-xl bg-white/5 text-sm opacity-80">
+              No coding problems yet. Once you add problems, they'll appear here with completion status.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      
+    </div>
+
+    <script>
+      function toggleSection(id) {
+        const container = document.getElementById(id);
+        if (!container) return;
+        const inputs = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+        const allChecked = inputs.every(i => i.checked);
+        inputs.forEach(i => i.checked = !allChecked);
+      }
+
+      function showTypeView() {
+        const tags = document.getElementById('view-tags');
+        const type = document.getElementById('view-type');
+        if (tags && type) {
+          tags.classList.add('hidden');
+          type.classList.remove('hidden');
+        }
+      }
+
+      function showTagsView() {
+        const tags = document.getElementById('view-tags');
+        const type = document.getElementById('view-type');
+        if (tags && type) {
+          type.classList.add('hidden');
+          tags.classList.remove('hidden');
+        }
+      }
+
+      function startPractice() {
+        const theoretical = document.getElementById('type-theory')?.checked;
+        const practical = document.getElementById('type-practical')?.checked;
+        // Placeholder: later send selection to backend or next screen
+      }
+
+      function goBackToMenu() {
+        // @ts-expect-error exposed via preload
+        window.api?.openMenu?.();
+      }
+
+      // Enable/disable Start Theory button based on tag selection
+      function updateStartButton() {
+        const startBtn = document.getElementById('start-theory');
+        if (!startBtn) return;
+        const containers = ['s1','s2','s3'].map(id => document.getElementById(id)).filter(Boolean);
+        const inputs = containers.flatMap(c => Array.from(c.querySelectorAll('input[type="checkbox"]')));
+        const anyChecked = inputs.some(i => i.checked);
+        if (anyChecked) {
+          startBtn.removeAttribute('disabled');
+          startBtn.classList.remove('opacity-50','cursor-not-allowed');
+        } else {
+          startBtn.setAttribute('disabled','');
+          startBtn.classList.add('opacity-50','cursor-not-allowed');
+        }
+      }
+
+      document.addEventListener('DOMContentLoaded', async () => {
+        ['s1','s2','s3'].forEach(id => {
+          const container = document.getElementById(id);
+          if (!container) return;
+          container.addEventListener('change', updateStartButton);
+        });
+        updateStartButton();
+
+        await loadProgress();
+      });
+
+      // --- Progress Load ---
+      function generatePastYearDates() {
+        const dates = [];
+        const today = new Date();
+        for (let i = 0; i < 365; i++) {
+          const d = new Date(today);
+          d.setDate(today.getDate() - i);
+          dates.push(d);
+        }
+        return dates.reverse();
+      }
+
+      const practiceActivity = new Map();
+
+      async function loadProgress() {
+        try {
+          // @ts-expect-error exposed via preload
+          const progress = await window.api?.getProgress?.();
+          if (progress?.activity) {
+            Object.entries(progress.activity).forEach(([k, v]) => practiceActivity.set(k, v as number));
+          }
+          // Update theory counts if present
+          if (progress?.theory) {
+            const applyCount = (containerId, tag) => {
+              const container = document.getElementById(containerId);
+              if (!container) return;
+              const labels = Array.from(container.querySelectorAll('label'));
+              for (const label of labels) {
+                const nameWrap = label.querySelector('span:first-child');
+                const badge = label.querySelector('span.tag-count');
+                if (nameWrap && badge && nameWrap.textContent?.includes(tag)) {
+                  const answered = progress.theory[tag]?.answered ?? 0;
+                  const total = progress.theory[tag]?.total ?? 0;
+                  badge.textContent = `${answered}/${total}`;
+                  break;
+                }
+              }
+            };
+            applyCount('s1', 'Arrays');
+            applyCount('s1', 'Linked Lists');
+            applyCount('s1', 'Cursor-Based');
+            applyCount('s1', 'Stack');
+            applyCount('s1', 'Queue');
+            applyCount('s1', 'ADT List');
+            applyCount('s2', 'SET and ADT Set');
+            applyCount('s2', 'ADT Dictionary');
+            applyCount('s2', 'ADT Priority Queue');
+            applyCount('s3', 'ADT Tree and Implementations');
+            applyCount('s3', 'Binary Search Tree (BST)');
+            applyCount('s3', 'Heapsort Sorting Technique');
+            applyCount('s3', 'Directed and Undirected Graph');
+            applyCount('s3', 'Graph Algorithms');
+          }
+        } catch {}
+        updateStreaks();
+      }
+
+      function dateKey(d) {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }
+
+      function renderHeatmap() {}
+      function intensity(count) { return 'transparent'; }
+
+      function updateStreaks() {
+        const dates = []; 
+        let current = 0;
+        let longest = 0;
+        let running = 0;
+        let prevDate = null;
+        for (const d of dates) {
+          const key = dateKey(d);
+          const active = (practiceActivity.get(key) || 0) > 0;
+          if (active) {
+            if (prevDate && (prevDate - d) === 24*60*60*1000) {
+              running += 1;
+            } else {
+              running = 1;
+            }
+            longest = Math.max(longest, running);
+          } else {
+            running = 0;
+          }
+          prevDate = d;
+        }
+        // Current streak: count back from today
+        current = 0;
+        const todayBack = [];
+        for (const d of todayBack) {
+          const key = dateKey(d);
+          const active = (practiceActivity.get(key) || 0) > 0;
+          if (current === 0 && !active) continue; // skip until first active day (today or earlier)
+          if (active) current += 1; else break;
+        }
+        const curEl = document.getElementById('current-streak');
+        const longEl = document.getElementById('longest-streak');
+        if (curEl) curEl.textContent = String(current);
+        if (longEl) longEl.textContent = String(longest);
+      }
+    </script>
+  </body>
+  </html>
+
+
