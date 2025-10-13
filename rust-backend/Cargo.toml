@@ -20,3 +20,5 @@ which = "4.0"
 sysinfo = "0.30"
 # Async runtime
 futures = "0.3"
+sha1_smol = "1"
+dirs = "5"

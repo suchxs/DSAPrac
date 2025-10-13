@@ -23,6 +23,7 @@ impl Judge {
         let compiler = Compiler::new().context("Failed to create compiler")?;
         
         // Compile the code
+        let compile_start = std::time::Instant::now();
         let executable_path = match request.language.to_lowercase().as_str() {
             "c" => compiler.compile_c(&request.code).await,
             "cpp" | "c++" => compiler.compile_cpp(&request.code).await,
@@ -30,6 +31,7 @@ impl Judge {
                 success: false,
                 result: None,
                 error: Some(format!("Unsupported language: {}", request.language)),
+                status: OverallStatus::UnsupportedLanguage,
             }),
         };
 
@@ -40,9 +42,12 @@ impl Judge {
                     success: false,
                     result: None,
                     error: Some(format!("Compilation failed: {}", e)),
+                    status: OverallStatus::CompileError,
                 });
             }
         };
+        let compile_time_ms = compile_start.elapsed().as_millis() as u64;
+        let executable_size_bytes = std::fs::metadata(&executable_path).ok().map(|m| m.len()).map(|n| n as u64);
 
         // Execute test cases
         let mut test_case_results = Vec::new();
@@ -67,9 +72,9 @@ impl Judge {
 
             total_execution_time += execution_result.execution_time;
 
-            // Compare outputs (normalize whitespace)
-            let actual_output = self.normalize_output(&execution_result.output);
-            let expected_output = self.normalize_output(&test_case.expected_output);
+            // Compare outputs (with options)
+            let actual_output = self.normalize_output_with(&execution_result.output, &request.normalization);
+            let expected_output = self.normalize_output_with(&test_case.expected_output, &request.normalization);
             let passed = actual_output == expected_output;
 
             test_case_results.push(TestCaseResult {
@@ -85,6 +90,16 @@ impl Judge {
         let passed_count = test_case_results.iter().filter(|r| r.passed).count();
         let score = (passed_count as f64 / test_case_results.len() as f64) * 100.0;
 
+        let overall_status = if passed_count == test_case_results.len() {
+            OverallStatus::Ok
+        } else if test_case_results.iter().any(|r| r.execution_result.error.as_deref() == Some("Time limit exceeded")) {
+            OverallStatus::Timeout
+        } else if test_case_results.iter().any(|r| r.execution_result.success == false && r.execution_result.error.is_some()) {
+            OverallStatus::RuntimeError
+        } else {
+            OverallStatus::Ok
+        };
+
         let submission_result = SubmissionResult {
             problem_id: request.problem.id.clone(),
             total_test_cases: test_case_results.len(),
@@ -94,24 +109,41 @@ impl Judge {
             compilation_error: None,
             total_execution_time,
             score,
+            compile_time_ms: Some(compile_time_ms),
+            executable_size_bytes,
         };
 
         Ok(JudgeResponse {
             success: true,
             result: Some(submission_result),
             error: None,
+            status: overall_status,
         })
     }
 
     /// Normalize output for comparison (trim whitespace, normalize line endings)
-    fn normalize_output(&self, output: &str) -> String {
+    fn normalize_output_default(&self, output: &str) -> String {
         output
+            .replace("\r\n", "\n")
             .lines()
             .map(|line| line.trim())
             .collect::<Vec<_>>()
             .join("\n")
             .trim()
             .to_string()
+    }
+
+    fn normalize_output_with(&self, output: &str, opts: &NormalizationOptions) -> String {
+        let mut s = output.to_string();
+        if opts.normalize_crlf { s = s.replace("\r\n", "\n"); }
+        if opts.ignore_extra_whitespace {
+            s = s
+                .lines()
+                .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+        s.lines().map(|l| l.trim()).collect::<Vec<_>>().join("\n").trim().to_string()
     }
 
     /// Check if required tools are available

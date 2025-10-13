@@ -4,7 +4,7 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 use sysinfo::{System, Pid};
 use tokio::process::Command as TokioCommand;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncWriteExt, AsyncReadExt};
 
 /// Handles execution of compiled code with sandboxing
 pub struct Executor {
@@ -38,42 +38,55 @@ impl Executor {
                 .context("Failed to write to stdin")?;
         }
 
-        // Wait for process to complete with timeout
-        let result = tokio::time::timeout(self.time_limit, child.wait()).await;
+        // Concurrently read stdout/stderr while waiting
+        let mut stdout_buf = Vec::new();
+        let mut stderr_buf = Vec::new();
+        let mut stdout_opt = child.stdout.take();
+        let mut stderr_opt = child.stderr.take();
+
+        let stdout_task = tokio::spawn(async move {
+            if let Some(mut s) = stdout_opt.take() {
+                let mut buf = Vec::new();
+                let _ = s.read_to_end(&mut buf).await;
+                buf
+            } else { Vec::new() }
+        });
+        let stderr_task = tokio::spawn(async move {
+            if let Some(mut s) = stderr_opt.take() {
+                let mut buf = Vec::new();
+                let _ = s.read_to_end(&mut buf).await;
+                buf
+            } else { Vec::new() }
+        });
+
+        let wait_task = tokio::spawn(async move { child.wait().await });
+
+        let result = tokio::time::timeout(self.time_limit, async {
+            let status = wait_task.await.map_err(|e| anyhow::anyhow!(e))??;
+            let out = stdout_task.await.unwrap_or_default();
+            let err = stderr_task.await.unwrap_or_default();
+            Ok::<(_, _, _), anyhow::Error>((status, out, err))
+        }).await;
 
         let execution_time = start_time.elapsed().as_millis() as u64;
 
         match result {
-            Ok(Ok(status)) => {
-                // Process completed normally
-                let mut output = Vec::new();
-                if let Some(mut stdout) = child.stdout.take() {
-                    use tokio::io::AsyncReadExt;
-                    let _ = stdout.read_to_end(&mut output).await;
-                }
-                let output_str = String::from_utf8_lossy(&output).to_string();
-
-                let error = if !status.success() {
-                    let mut stderr = Vec::new();
-                    if let Some(mut stderr_handle) = child.stderr.take() {
-                        use tokio::io::AsyncReadExt;
-                        let _ = stderr_handle.read_to_end(&mut stderr).await;
-                    }
-                    Some(String::from_utf8_lossy(&stderr).to_string())
-                } else {
-                    None
-                };
-
+            Ok(Ok((status, out, err))) => {
+                stdout_buf = out;
+                stderr_buf = err;
+                let output_str = String::from_utf8_lossy(&stdout_buf).to_string();
+                let error = if !status.success() && !stderr_buf.is_empty() {
+                    Some(String::from_utf8_lossy(&stderr_buf).to_string())
+                } else { None };
                 Ok(ExecutionResult {
                     success: status.success(),
                     output: output_str,
                     error,
                     execution_time,
-                    memory_usage: self.get_memory_usage(child.id().unwrap_or(0)).unwrap_or(0),
+                    memory_usage: 0,
                 })
             }
             Ok(Err(e)) => {
-                // Process failed to start or had an error
                 Ok(ExecutionResult {
                     success: false,
                     output: String::new(),
@@ -83,8 +96,6 @@ impl Executor {
                 })
             }
             Err(_) => {
-                // Timeout occurred
-                let _ = child.kill().await;
                 Ok(ExecutionResult {
                     success: false,
                     output: String::new(),

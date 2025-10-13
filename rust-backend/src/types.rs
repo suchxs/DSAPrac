@@ -1,5 +1,21 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum OverallStatus {
+    Ok,
+    CompileError,
+    RuntimeError,
+    Timeout,
+    UnsupportedLanguage,
+    EnvError,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NormalizationOptions {
+    pub normalize_crlf: bool,
+    pub ignore_extra_whitespace: bool,
+}
+
 /// Represents a test case for a problem
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TestCase {
@@ -60,6 +76,8 @@ pub struct SubmissionResult {
     pub compilation_error: Option<String>,
     pub total_execution_time: u64,
     pub score: f64, // percentage
+    pub compile_time_ms: Option<u64>,
+    pub executable_size_bytes: Option<u64>,
 }
 
 /// Request to compile and run code
@@ -68,6 +86,8 @@ pub struct JudgeRequest {
     pub code: String,
     pub problem: Problem,
     pub language: String, // "c", "cpp", etc.
+    #[serde(default)]
+    pub normalization: NormalizationOptions,
 }
 
 /// Response from judge
@@ -76,4 +96,5 @@ pub struct JudgeResponse {
     pub success: bool,
     pub result: Option<SubmissionResult>,
     pub error: Option<String>,
+    pub status: OverallStatus,
 }
