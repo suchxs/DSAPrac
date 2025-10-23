@@ -84,7 +84,7 @@ const QuestionMaker: React.FC = () => {
             <div>
               <h2 className="text-2xl font-semibold text-white">Theoretical Questions</h2>
               <p className="mt-2 text-sm text-neutral-400">
-                Create multiple-choice flashcards stored as Markdown with rich metadata.
+                Create md flashcards
               </p>
 
               <div className="mt-6 space-y-4">
@@ -126,7 +126,7 @@ const QuestionMaker: React.FC = () => {
             <div>
               <h2 className="text-2xl font-semibold text-white">Practical Problems</h2>
               <p className="mt-2 text-sm text-neutral-400">
-                Build code challenges with starter templates, solutions, and test cases.
+                Create Codechum boilerplate questions
               </p>
 
               <div className="mt-6 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
