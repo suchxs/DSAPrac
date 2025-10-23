@@ -89,7 +89,8 @@ function recordActivity(progress: ProgressData, dateKey?: string) {
 }
 
 function createWindow() {
-  const preloadPath = path.join(__dirname, '../src/preload.cjs');
+  const preloadPath = path.join(__dirname, 'preload.js');
+  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
   mainWindow = new BrowserWindow({
     title: 'DSAPrac',
@@ -102,18 +103,26 @@ function createWindow() {
     },
   });
 
-  // Load static HTML file directly - NO VITE NEEDED!
-  mainWindow.loadFile(path.join(__dirname, '../static/index.html'));
+  // Load Vite dev server in development, bundled files in production
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173').catch((err) => {
+      console.error('Failed to load Vite dev server:', err);
+      console.log('Make sure Vite dev server is running on port 5173');
+    });
+  } else {
+    mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+  }
 }
 
-// Single-window navigation helpers
-function loadInMainWindow(fileRelativePath: string, width?: number, height?: number) {
+// Single-window navigation - no longer needed with React Router
+// Routes are now handled in the React app
+function loadInMainWindow(route: string, width?: number, height?: number) {
   if (!mainWindow) return;
   if (width && height) {
-    // Resize then center for a seamless transition
     mainWindow.setSize(width, height);
   }
-  mainWindow.loadFile(path.join(__dirname, fileRelativePath));
+  // Navigation is now handled by React Router, we just notify the renderer
+  mainWindow.webContents.send('navigate', route);
 }
 
 function startBackend() {
@@ -190,18 +199,27 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('open-practice', () => {
-    // Resize existing window and load practice UI in place with increased height for heatmap
-    loadInMainWindow('../static/practice.html', 1400, 1080);
+    // Resize window for practice mode (includes heatmap)
+    if (mainWindow) {
+      mainWindow.setSize(1400, 1080);
+      mainWindow.webContents.send('navigate', '/practice');
+    }
   });
 
   ipcMain.on('open-exam', () => {
-    // Load exam configuration page with increased height
-    loadInMainWindow('../static/exam.html', 1400, 1080);
+    // Resize window for exam config
+    if (mainWindow) {
+      mainWindow.setSize(1400, 1080);
+      mainWindow.webContents.send('navigate', '/exam');
+    }
   });
 
   ipcMain.on('open-menu', () => {
-    // Return to main menu and resize to original menu size
-    loadInMainWindow('../static/index.html', 1100, 900);
+    // Return to main menu and resize to original size
+    if (mainWindow) {
+      mainWindow.setSize(1100, 900);
+      mainWindow.webContents.send('navigate', '/');
+    }
   });
 
   app.on('activate', () => {

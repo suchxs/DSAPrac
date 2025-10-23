@@ -7,21 +7,36 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "build:main": "tsc -p tsconfig.main.json",
+    "build:renderer": "vite build",
+    "dev:vite": "vite",
     "build:css": "npx @tailwindcss/cli@latest -i ./static/styles.css -o ./static/dist.css --watch",
     "build:css:once": "npx @tailwindcss/cli@latest -i ./static/styles.css -o ./static/dist.css",
     "watch-main": "tsc -w -p tsconfig.main.json",
     "start": "electron build/main.js",
-    "dev": "npm run build:main && npm run build:css:once && npm run start",
-    "dev:all": "concurrently \"npm run watch-main\" \"npm run build:css\" \"npm run start\""
+    "dev": "npm run build:main && electron build/main.js",
+    "build": "npm run build:main && npm run build:renderer"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^24.5.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "autoprefixer": "^10.4.21",
     "concurrently": "^9.2.1",
     "electron": "^28.3.3",
+    "postcss": "^8.5.6",
+    "postcss-import": "^16.1.1",
     "tailwindcss": "^4.1.13",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vite": "^5.4.11",
+    "vite-plugin-electron-renderer": "^0.14.6"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
   }
 }
