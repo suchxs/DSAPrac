@@ -10,8 +10,14 @@ const MainMenu: React.FC = () => {
   };
 
   const handleQuestionCreator = () => {
-    // TODO: Implement question creator
-    alert('Question Creator coming soon!');
+    console.log('Question Creator clicked');
+    if (window.api && window.api.openQuestionMaker) {
+      console.log('Calling openQuestionMaker API');
+      window.api.openQuestionMaker();
+    } else {
+      console.error('openQuestionMaker API not available - app needs restart');
+      alert('Please restart the app to use Question Creator.\n\nThe app was started before this feature was added.');
+    }
   };
 
   const handleExit = () => {
@@ -24,7 +30,6 @@ const MainMenu: React.FC = () => {
 
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-6">
-      {/* Animated Background GIF - More visible */}
       <div 
         className="fixed inset-0 -z-10"
         style={{
@@ -138,14 +143,14 @@ const MainMenu: React.FC = () => {
           <div className="flex items-center justify-center gap-3">
             <button
               onClick={() => openGitHub('https://github.com/suchxs')}
-              className="text-sm text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              className="text-sm text-blue-400 hover:text-blue-300 font-medium transition-colors cursor-pointer"
             >
               suchxs
             </button>
             <span className="text-white/20">·</span>
             <button
               onClick={() => openGitHub('https://github.com/koeyori')}
-              className="text-sm text-cyan-400 hover:text-cyan-300 font-medium transition-colors"
+              className="text-sm text-cyan-400 hover:text-cyan-300 font-medium transition-colors cursor-pointer"
             >
               Koeyori
             </button>
