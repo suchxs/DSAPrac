@@ -101,7 +101,7 @@ const PracticeMode: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
+    <div className="min-h-screen relative overflow-hidden pt-8">
       {/* Animated Background GIF */}
       <div 
         className="fixed inset-0 -z-10"

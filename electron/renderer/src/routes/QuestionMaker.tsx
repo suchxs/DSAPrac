@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import GlassCard from '../components/GlassCard';
 
 interface QuestionCounts {
@@ -7,6 +8,7 @@ interface QuestionCounts {
 }
 
 const QuestionMaker: React.FC = () => {
+  const navigate = useNavigate();
   const [counts, setCounts] = useState<QuestionCounts>({ theoretical: 0, practical: 0 });
 
   useEffect(() => {
@@ -23,13 +25,10 @@ const QuestionMaker: React.FC = () => {
   };
 
   const handleCreateTheoretical = () => {
-    // TODO: Navigate to theoretical question creator
-    console.log('Creating theoretical question');
-    alert('Theoretical Question Creator - Coming Soon!\n\nThis will open a form to create multiple-choice questions for theory practice.');
+    navigate('/question-maker/theoretical');
   };
 
   const handleCreatePractical = () => {
-    // TODO: Navigate to practical question creator
     console.log('Creating practical question');
     alert('Practical Question Creator - Coming Soon!\n\nThis will open a form to create coding problems with test cases.');
   };
@@ -39,125 +38,90 @@ const QuestionMaker: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden">
-      {/* Animated Background GIF */}
-      <div 
-        className="fixed inset-0 -z-10"
-        style={{
-          backgroundImage: 'url(/assets/background.gif)',
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          opacity: 0.35,
-        }}
-      />
-
-      <div className="container mx-auto px-6 py-8 relative">
-        {/* Header */}
-        <div className="mb-6 flex items-center justify-between">
+    <div className="min-h-screen bg-neutral-950 text-neutral-50 pt-8">
+      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-12">
+        <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Question Creator</h1>
-            <p className="opacity-80 text-sm mt-1">
-              Create theoretical or practical questions for the system.
+            <p className="mt-1 text-sm text-neutral-400">
+              Choose between theoretical flashcards or practical coding problems.
             </p>
           </div>
-          <button onClick={handleBack} className="button-modern px-4 py-2 rounded-xl cursor-pointer">
-            Back
+          <button
+            onClick={handleBack}
+            className="inline-flex items-center justify-center rounded-md border border-neutral-800 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+          >
+            Back to Menu
           </button>
         </div>
 
-        {/* Question Type Selection Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto">
-          {/* Theoretical Questions */}
-          <GlassCard className="p-8">
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-blue-500/10 mb-4">
-                <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-semibold mb-2">Theoretical</h2>
-              <p className="text-sm opacity-80 mb-4">
-                Multiple-choice questions for theory practice
+        <div className="grid flex-1 grid-cols-1 gap-6 lg:grid-cols-2">
+          <GlassCard className="flex flex-col justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 p-8">
+            <div>
+              <h2 className="text-2xl font-semibold text-white">Theoretical Questions</h2>
+              <p className="mt-2 text-sm text-neutral-400">
+                Create multiple-choice flashcards stored as Markdown with rich metadata.
               </p>
-              
-              {/* Question Counter */}
-              <div className="inline-block px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-400/20 mb-6">
-                <div className="text-sm opacity-70 mb-1">Loaded Questions</div>
-                <div className="text-3xl font-bold text-blue-400">{counts.theoretical}</div>
+
+              <div className="mt-6 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
+                <span className="text-xs uppercase tracking-wide text-neutral-500">Total Questions</span>
+                <span className="text-3xl font-bold text-white">{counts.theoretical}</span>
               </div>
             </div>
 
             <button
               onClick={handleCreateTheoretical}
-              className="w-full button-modern px-6 py-3 rounded-xl text-lg font-medium cursor-pointer hover:scale-105 transition-transform"
+              className="mt-8 inline-flex items-center justify-center gap-2 rounded-md border border-neutral-700 bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-neutral-200 cursor-pointer"
             >
-              <span className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create Theoretical Question
-              </span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Create Theoretical Question
             </button>
-
-            <div className="mt-4 text-xs opacity-60 text-center">
-              Questions will be tagged by topic and section
-            </div>
           </GlassCard>
 
-          {/* Practical Questions */}
-          <GlassCard className="p-8">
-            <div className="text-center mb-6">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-cyan-500/10 mb-4">
-                <svg className="w-8 h-8 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-                </svg>
-              </div>
-              <h2 className="text-2xl font-semibold mb-2">Practical</h2>
-              <p className="text-sm opacity-80 mb-4">
-                Coding problems with test cases and solutions
+          <GlassCard className="flex flex-col justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 p-8">
+            <div>
+              <h2 className="text-2xl font-semibold text-white">Practical Problems</h2>
+              <p className="mt-2 text-sm text-neutral-400">
+                Build code challenges with starter templates, solutions, and test cases.
               </p>
-              
-              {/* Question Counter */}
-              <div className="inline-block px-4 py-2 rounded-lg bg-cyan-500/10 border border-cyan-400/20 mb-6">
-                <div className="text-sm opacity-70 mb-1">Loaded Questions</div>
-                <div className="text-3xl font-bold text-cyan-400">{counts.practical}</div>
+
+              <div className="mt-6 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
+                <span className="text-xs uppercase tracking-wide text-neutral-500">Total Problems</span>
+                <span className="text-3xl font-bold text-white">{counts.practical}</span>
               </div>
             </div>
 
             <button
               onClick={handleCreatePractical}
-              className="w-full button-modern px-6 py-3 rounded-xl text-lg font-medium cursor-pointer hover:scale-105 transition-transform"
+              className="mt-8 inline-flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
             >
-              <span className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                Create Practical Question
-              </span>
-            </button>
-
-            <div className="mt-4 text-xs opacity-60 text-center">
-              Include problem description, test cases, and reference solution
-            </div>
-          </GlassCard>
-        </div>
-
-        {/* Info Section */}
-        <div className="max-w-5xl mx-auto mt-8">
-          <GlassCard className="p-6">
-            <div className="flex items-start gap-3">
-              <svg className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-4 w-4"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              <div className="text-sm opacity-80">
-                <p className="font-medium mb-1">Question Storage</p>
-                <p>
-                  Questions are stored as Markdown files in the <code className="px-1.5 py-0.5 rounded bg-white/10">questions/</code> directory. 
-                  Theoretical questions use multiple-choice format, while practical questions include problem descriptions and test cases.
-                </p>
-              </div>
-            </div>
+              Practical Creator Coming Soon
+            </button>
           </GlassCard>
         </div>
       </div>

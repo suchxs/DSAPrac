@@ -109,6 +109,9 @@ function createWindow() {
     width: 1100,
     height: 900,
     icon: nativeImage.createFromPath(iconPath),
+    frame: false, // Remove default title bar
+    backgroundColor: '#000000', // Black background
+    titleBarStyle: 'hidden', // Hide title bar on macOS
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -267,6 +270,29 @@ app.whenReady().then(() => {
       mainWindow.setSize(1400, 1080);
       mainWindow.webContents.send('navigate', '/question-maker');
     }
+  });
+
+  // Window controls for custom title bar
+  ipcMain.on('window-minimize', () => {
+    if (mainWindow) mainWindow.minimize();
+  });
+
+  ipcMain.on('window-maximize', () => {
+    if (mainWindow) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+    }
+  });
+
+  ipcMain.on('window-close', () => {
+    if (mainWindow) mainWindow.close();
+  });
+
+  ipcMain.handle('window-is-maximized', () => {
+    return mainWindow ? mainWindow.isMaximized() : false;
   });
 
   app.on('activate', () => {

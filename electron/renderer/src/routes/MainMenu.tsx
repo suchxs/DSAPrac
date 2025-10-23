@@ -29,7 +29,7 @@ const MainMenu: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-6">
+    <div className="min-h-screen relative overflow-hidden flex items-center justify-center p-6 pt-14">
       <div 
         className="fixed inset-0 -z-10"
         style={{
@@ -156,6 +156,11 @@ const MainMenu: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Version Number - Bottom Left */}
+      <div className="fixed bottom-4 left-4 text-xs text-white/40 font-medium">
+        BETA v1.0
       </div>
     </div>
   );
