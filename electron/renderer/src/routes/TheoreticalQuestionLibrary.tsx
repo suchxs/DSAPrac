@@ -445,8 +445,8 @@ const TheoreticalQuestionLibrary: React.FC = () => {
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Theory Question Library</h1>
             <p className="mt-1 text-sm text-neutral-400">
-              Browse and edit every theoretical flashcard in one place. Cards and media live inside the repository{" "}
-              <span className="font-semibold text-neutral-200">questions/theory</span> folder so they can be committed and shared.
+              All data is fetched from{" "}
+              <span className="font-semibold text-neutral-200">questions/theory</span> folder
             </p>
           </div>
           <button
@@ -454,7 +454,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
             onClick={handleBack}
             className="inline-flex items-center justify-center rounded-md border border-neutral-800 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
           >
-            Back to Creator
+            Back
           </button>
         </header>
 
@@ -473,8 +473,8 @@ const TheoreticalQuestionLibrary: React.FC = () => {
         ) : questions.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="max-w-md rounded-lg border border-neutral-800 bg-neutral-900/60 px-6 py-4 text-sm text-neutral-400">
-              No theoretical questions have been created yet. Add cards from the creator page to populate this library.
-              Files will appear under <span className="font-semibold text-neutral-200">questions/theory</span>.
+              No theoretical questions have been created yet. Add cards from the creator page to populate this library, or join our
+              <span className="font-semibold text-neutral-200"> Discord Server</span> for Community Created Questions
             </div>
           </div>
         ) : (
