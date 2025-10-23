@@ -4,6 +4,8 @@ import MainMenu from './routes/MainMenu';
 import PracticeMode from './routes/PracticeMode';
 import ExamConfig from './routes/ExamConfig';
 import QuestionMaker from './routes/QuestionMaker';
+import TheoreticalQuestionCreator from './routes/TheoreticalQuestionCreator';
+import TitleBar from './components/TitleBar';
 
 function NavigationHandler() {
   const navigate = useNavigate();
@@ -21,12 +23,14 @@ function NavigationHandler() {
 function App() {
   return (
     <Router>
+      <TitleBar />
       <NavigationHandler />
       <Routes>
         <Route path="/" element={<MainMenu />} />
         <Route path="/practice" element={<PracticeMode />} />
         <Route path="/exam" element={<ExamConfig />} />
         <Route path="/question-maker" element={<QuestionMaker />} />
+        <Route path="/question-maker/theoretical" element={<TheoreticalQuestionCreator />} />
       </Routes>
     </Router>
   );

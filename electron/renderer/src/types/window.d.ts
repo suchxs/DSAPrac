@@ -15,6 +15,11 @@ export interface ElectronAPI {
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
   // Question count APIs
   getQuestionCounts: () => Promise<QuestionCounts>;
+  // Window controls
+  windowMinimize: () => void;
+  windowMaximize: () => void;
+  windowClose: () => void;
+  windowIsMaximized: () => Promise<boolean>;
 }
 
 export interface ProgressData {

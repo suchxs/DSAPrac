@@ -25,6 +25,11 @@ export interface ElectronAPI {
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
   getQuestionCounts: () => Promise<QuestionCounts>;
   onNavigate: (callback: (route: string) => void) => void;
+  // Window controls
+  windowMinimize: () => void;
+  windowMaximize: () => void;
+  windowClose: () => void;
+  windowIsMaximized: () => Promise<boolean>;
 }
 
 const api: ElectronAPI = {
@@ -45,6 +50,11 @@ const api: ElectronAPI = {
   onNavigate: (callback: (route: string) => void) => {
     ipcRenderer.on('navigate', (_event, route) => callback(route));
   },
+  // Window controls
+  windowMinimize: () => ipcRenderer.send('window-minimize'),
+  windowMaximize: () => ipcRenderer.send('window-maximize'),
+  windowClose: () => ipcRenderer.send('window-close'),
+  windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
 };
 
 contextBridge.exposeInMainWorld('api', api);
