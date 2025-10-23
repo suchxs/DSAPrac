@@ -6,6 +6,6 @@
     "noEmit": false,
     "isolatedModules": false
   },
-  "include": ["src/main.ts"],
-  "exclude": ["src/renderer.tsx", "src/**/*.tsx", "src/**/*.html"]
+  "include": ["src/main.ts", "src/preload.ts"],
+  "exclude": ["src/renderer.tsx", "src/**/*.tsx", "src/**/*.html", "renderer"]
 }
