@@ -75,10 +75,7 @@
                   <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="ADT Dictionary"> ADT Dictionary</span>
                   <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
                 </label>
-                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
-                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="ADT Priority Queue"> ADT Priority Queue</span>
-                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
-                </label>
+                <!-- ADT Priority Queue moved to Section 3 -->
               </div>
             </div>
 
@@ -107,6 +104,10 @@
                 </label>
                 <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
                   <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="Graph Algorithms"> Graph Algorithms</span>
+                  <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
+                </label>
+                <label class="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-white/5">
+                  <span class="flex items-center gap-2"><input type="checkbox" class="accent-blue-400" value="ADT Priority Queue"> ADT Priority Queue</span>
                   <span class="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">0/0</span>
                 </label>
               </div>
@@ -141,6 +142,10 @@
         const inputs = Array.from(container.querySelectorAll('input[type="checkbox"]'));
         const allChecked = inputs.every(i => i.checked);
         inputs.forEach(i => i.checked = !allChecked);
+        // Dispatch change events for programmatic changes so listeners react
+        inputs.forEach(i => i.dispatchEvent(new Event('change', { bubbles: true })));
+        // Also ensure the Start Theory button state is recalculated immediately
+        if (typeof updateStartButton === 'function') updateStartButton();
       }
 
       function showTypeView() {
@@ -217,9 +222,9 @@
         try {
           // @ts-expect-error exposed via preload
           const progress = await window.api?.getProgress?.();
-          if (progress?.activity) {
-            Object.entries(progress.activity).forEach(([k, v]) => practiceActivity.set(k, v as number));
-          }
+            if (progress?.activity) {
+              Object.entries(progress.activity).forEach(([k, v]) => practiceActivity.set(k, Number(v)));
+            }
           // Update theory counts if present
           if (progress?.theory) {
             const applyCount = (containerId, tag) => {
@@ -245,7 +250,8 @@
             applyCount('s1', 'ADT List');
             applyCount('s2', 'SET and ADT Set');
             applyCount('s2', 'ADT Dictionary');
-            applyCount('s2', 'ADT Priority Queue');
+            // ADT Priority Queue moved to Section 3
+            applyCount('s3', 'ADT Priority Queue');
             applyCount('s3', 'ADT Tree and Implementations');
             applyCount('s3', 'Binary Search Tree (BST)');
             applyCount('s3', 'Heapsort Sorting Technique');

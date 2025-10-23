@@ -93,8 +93,8 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     title: 'DSAPrac',
-    width: 1024,
-    height: 768,
+    width: 1100,
+    height: 900,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -112,7 +112,6 @@ function loadInMainWindow(fileRelativePath: string, width?: number, height?: num
   if (width && height) {
     // Resize then center for a seamless transition
     mainWindow.setSize(width, height);
-    mainWindow.center();
   }
   mainWindow.loadFile(path.join(__dirname, fileRelativePath));
 }
@@ -192,17 +191,17 @@ app.whenReady().then(() => {
 
   ipcMain.on('open-practice', () => {
     // Resize existing window and load practice UI in place
-    loadInMainWindow('../static/practice.html', 1440, 960);
+    loadInMainWindow('../static/practice.html', 1400, 920);
   });
 
   ipcMain.on('open-exam', () => {
     // Placeholder: reuse single-window flow with a future exam page
-    loadInMainWindow('../static/practice.html', 1440, 960);
+    loadInMainWindow('../static/practice.html', 1400, 920);
   });
 
   ipcMain.on('open-menu', () => {
     // Return to main menu and resize to original menu size
-    loadInMainWindow('../static/index.html', 1024, 768);
+    loadInMainWindow('../static/index.html', 1100, 900);
   });
 
   app.on('activate', () => {
