@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -92,16 +92,38 @@ function createWindow() {
   const preloadPath = path.join(__dirname, 'preload.js');
   const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
+  // Resolve icon path for dev vs packaged app
+  function getIconPath(): string {
+    // When packaged, icons will be copied to resources/icons via electron-builder (see package.json build.extraResources)
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, 'icons', 'icon.ico');
+    }
+    // Development: resolve relative to compiled JS location
+    return path.join(__dirname, '..', 'static', 'icons', 'icon.ico');
+  }
+
+  const iconPath = getIconPath();
+
   mainWindow = new BrowserWindow({
     title: 'DSAPrac',
     width: 1100,
     height: 900,
+    icon: nativeImage.createFromPath(iconPath),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
       preload: preloadPath,
     },
   });
+
+  // macOS dock icon (BrowserWindow.icon is ignored on macOS for dock)
+  if (process.platform === 'darwin' && fs.existsSync(iconPath)) {
+    try {
+      app.dock.setIcon(nativeImage.createFromPath(iconPath));
+    } catch (e) {
+      console.warn('Failed to set dock icon:', e);
+    }
+  }
 
   // Load Vite dev server in development, bundled files in production
   if (isDev) {
@@ -198,6 +220,23 @@ app.whenReady().then(() => {
     return p;
   });
 
+  ipcMain.handle('questions:getCounts', () => {
+    // TODO: Implement actual question counting from files/database
+    // For now, returning placeholder counts
+    const p = readProgress();
+    
+    // Count theoretical questions from progress.theory
+    const theoreticalCount = Object.values(p.theory).reduce((sum, tagData) => sum + tagData.total, 0);
+    
+    // Count practical questions from progress.practical
+    const practicalCount = Object.keys(p.practical).length;
+    
+    return {
+      theoretical: theoreticalCount,
+      practical: practicalCount,
+    };
+  });
+
   ipcMain.on('open-practice', () => {
     // Resize window for practice mode (includes heatmap)
     if (mainWindow) {
@@ -219,6 +258,14 @@ app.whenReady().then(() => {
     if (mainWindow) {
       mainWindow.setSize(1100, 900);
       mainWindow.webContents.send('navigate', '/');
+    }
+  });
+
+  ipcMain.on('open-question-maker', () => {
+    // Resize window for question maker
+    if (mainWindow) {
+      mainWindow.setSize(1400, 1080);
+      mainWindow.webContents.send('navigate', '/question-maker');
     }
   });
 

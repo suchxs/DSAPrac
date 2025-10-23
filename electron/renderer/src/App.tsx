@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import MainMenu from './routes/MainMenu';
 import PracticeMode from './routes/PracticeMode';
 import ExamConfig from './routes/ExamConfig';
+import QuestionMaker from './routes/QuestionMaker';
 
 function NavigationHandler() {
   const navigate = useNavigate();
@@ -25,6 +26,7 @@ function App() {
         <Route path="/" element={<MainMenu />} />
         <Route path="/practice" element={<PracticeMode />} />
         <Route path="/exam" element={<ExamConfig />} />
+        <Route path="/question-maker" element={<QuestionMaker />} />
       </Routes>
     </Router>
   );
