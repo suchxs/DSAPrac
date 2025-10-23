@@ -46,6 +46,12 @@ const PracticeMode: React.FC = () => {
 
   useEffect(() => {
     loadProgress();
+    const unsubscribe = window.api.onDataRefresh(({ progress }) => {
+      setProgress(progress);
+    });
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const loadProgress = async () => {

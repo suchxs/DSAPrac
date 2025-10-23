@@ -1,5 +1,6 @@
 import React, { FormEvent, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { SECTION_OPTIONS } from '../constants/theorySections';
 
 interface Choice {
   id: string;
@@ -9,47 +10,6 @@ interface Choice {
 
 const MIN_CHOICES = 6;
 const MAX_CHOICES = 10;
-
-interface SectionOption {
-  value: string;
-  label: string;
-  lessons: string[];
-}
-
-const SECTION_OPTIONS: SectionOption[] = [
-  {
-    value: '1',
-    label: 'Section 1',
-    lessons: [
-      'Arrays',
-      'Linked Lists',
-      'Cursor-Based',
-      'Stack',
-      'Queue',
-      'ADT List',
-    ],
-  },
-  {
-    value: '2',
-    label: 'Section 2',
-    lessons: [
-      'SET and ADT Set',
-      'ADT Dictionary',
-    ],
-  },
-  {
-    value: '3',
-    label: 'Section 3',
-    lessons: [
-      'ADT Tree and Implementations',
-      'Binary Search Tree (BST)',
-      'Heapsort Sorting Technique',
-      'Directed and Undirected Graph',
-      'Graph Algorithms',
-      'ADT Priority Queue',
-    ],
-  },
-];
 
 const createChoice = (index: number): Choice => ({
   id: `choice-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`,
@@ -68,6 +28,8 @@ const TheoreticalQuestionCreator: React.FC = () => {
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitSuccess, setSubmitSuccess] = useState<{ section: string; lesson: string; id: string } | null>(null);
 
   const correctCount = useMemo(
     () => choices.reduce((count, choice) => (choice.isCorrect ? count + 1 : count), 0),
@@ -143,13 +105,17 @@ const TheoreticalQuestionCreator: React.FC = () => {
     reader.readAsDataURL(file);
   };
 
-  const handleRemoveImage = () => {
+  const resetImageState = () => {
     setImageFile(null);
     setImagePreview(null);
     setImageError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleRemoveImage = () => {
+    resetImageState();
   };
 
   const isFormValid = useMemo(() => {
@@ -163,13 +129,14 @@ const TheoreticalQuestionCreator: React.FC = () => {
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!isFormValid) return;
+    if (!isFormValid || isSubmitting) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
 
     try {
       const payload = {
-        question: question.trim(),
+        question: question.replace(/\r\n/g, '\n'),
         section,
         lesson,
         image: imagePreview
@@ -178,17 +145,44 @@ const TheoreticalQuestionCreator: React.FC = () => {
               dataUrl: imagePreview,
             }
           : null,
-        choices: choices.map(({ id, ...rest }) => rest),
+        choices: choices.map((choice) => ({
+          text: choice.text.trim(),
+          isCorrect: choice.isCorrect,
+        })),
       };
 
-      console.info('Theoretical question payload:', payload);
-      alert('Question builder prototype only. Backend wiring will be added later.');
+      const result = await window.api.createTheoreticalQuestion(payload);
+      setSubmitSuccess({
+        section: result.section,
+        lesson: result.lesson,
+        id: result.id,
+      });
+      setSubmitError(null);
+    } catch (error) {
+      console.error('Failed to create theoretical question:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to save the question. Please try again.';
+      setSubmitError(message);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const choiceRequirementMet = choices.length >= MIN_CHOICES;
+
+  const handleSuccessAcknowledge = () => {
+    resetImageState();
+    setQuestion('');
+    setChoices([]);
+    setSection('');
+    setLesson('');
+    setSubmitSuccess(null);
+    setSubmitError(null);
+    navigate('/question-maker');
+    window.api.openQuestionMaker();
+  };
 
   return (
     <div className="h-screen overflow-y-auto bg-neutral-950 text-neutral-100">
@@ -510,8 +504,46 @@ const TheoreticalQuestionCreator: React.FC = () => {
               {isSubmitting ? 'Saving...' : 'Save Question'}
             </button>
           </div>
+
+          {submitError && (
+            <div className="mt-4 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+              {submitError}
+            </div>
+          )}
         </form>
       </div>
+
+      {submitSuccess && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-neutral-100 shadow-xl">
+            <div className="flex flex-col gap-2">
+              <h2 className="text-xl font-semibold">Question Saved</h2>
+              <p className="text-sm text-neutral-400">
+                Your theoretical question for{' '}
+                <span className="font-medium text-neutral-100">
+                  {submitSuccess.section} / {submitSuccess.lesson}
+                </span>{' '}
+                has been stored successfully.
+              </p>
+              <p className="text-xs text-neutral-500">
+                Files are saved under the repository <span className="font-semibold text-neutral-200">questions/theory</span> directory so they can be version-controlled.
+              </p>
+              <p className="text-xs text-neutral-500">
+                The question bank and progress counters have been updated and are ready for practice.
+              </p>
+            </div>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSuccessAcknowledge}
+                className="inline-flex items-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-semibold text-black transition hover:bg-white cursor-pointer"
+              >
+                Back to Question Maker
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

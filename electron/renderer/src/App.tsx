@@ -5,6 +5,7 @@ import PracticeMode from './routes/PracticeMode';
 import ExamConfig from './routes/ExamConfig';
 import QuestionMaker from './routes/QuestionMaker';
 import TheoreticalQuestionCreator from './routes/TheoreticalQuestionCreator';
+import TheoreticalQuestionLibrary from './routes/TheoreticalQuestionLibrary';
 import TitleBar from './components/TitleBar';
 
 function NavigationHandler() {
@@ -31,6 +32,7 @@ function App() {
         <Route path="/exam" element={<ExamConfig />} />
         <Route path="/question-maker" element={<QuestionMaker />} />
         <Route path="/question-maker/theoretical" element={<TheoreticalQuestionCreator />} />
+        <Route path="/question-maker/theoretical/library" element={<TheoreticalQuestionLibrary />} />
       </Routes>
     </Router>
   );
