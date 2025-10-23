@@ -190,13 +190,13 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('open-practice', () => {
-    // Resize existing window and load practice UI in place
-    loadInMainWindow('../static/practice.html', 1400, 920);
+    // Resize existing window and load practice UI in place with increased height for heatmap
+    loadInMainWindow('../static/practice.html', 1400, 1080);
   });
 
   ipcMain.on('open-exam', () => {
-    // Placeholder: reuse single-window flow with a future exam page
-    loadInMainWindow('../static/practice.html', 1400, 920);
+    // Load exam configuration page with increased height
+    loadInMainWindow('../static/exam.html', 1400, 1080);
   });
 
   ipcMain.on('open-menu', () => {

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exam Mode</title>
+    <link href="./dist.css" rel="stylesheet">
+  </head>
+  <body class="natural-bg min-h-screen text-white relative overflow-hidden">
+    <img class="background-video fixed top-0 left-0 w-full h-full object-cover -z-20 opacity-60" src="assets/background.gif" alt="Background">
+
+    <div class="container mx-auto px-6 py-8 relative">
+      <div class="mb-6 flex items-center justify-between">
+        <div>
+          <h1 class="text-3xl font-semibold tracking-tight">Exam Mode</h1>
+          <p class="opacity-80 text-sm mt-1">Select sections to test your knowledge. Theory and practical questions will be bundled and randomized.</p>
+        </div>
+        <button onclick="goBack()" class="button-modern px-4 py-2 rounded-xl">Back</button>
+      </div>
+
+      <div class="max-w-2xl mx-auto">
+        <!-- Exam Configuration Card -->
+        <div class="glass-card p-8">
+          <h2 class="text-xl font-semibold mb-2">Configure Your Exam</h2>
+          <p class="text-sm opacity-80 mb-6">Choose which sections to include in your exam session.</p>
+
+          <!-- Section Selection -->
+          <div class="space-y-4 mb-8">
+            <label class="flex items-center gap-3 p-4 rounded-xl hover:bg-white/5 cursor-pointer transition-all">
+              <input type="checkbox" class="section-checkbox accent-blue-400 w-5 h-5" value="section-1" onchange="updateStartButton()">
+              <div class="flex-1">
+                <div class="font-medium text-lg">Section 1</div>
+                <div class="text-sm opacity-70 mt-1">Arrays, Linked Lists, Cursor-Based, Stack, Queue, ADT List</div>
+              </div>
+            </label>
+
+            <label class="flex items-center gap-3 p-4 rounded-xl hover:bg-white/5 cursor-pointer transition-all">
+              <input type="checkbox" class="section-checkbox accent-blue-400 w-5 h-5" value="section-2" onchange="updateStartButton()">
+              <div class="flex-1">
+                <div class="font-medium text-lg">Section 2</div>
+                <div class="text-sm opacity-70 mt-1">SET and ADT Set, ADT Dictionary</div>
+              </div>
+            </label>
+
+            <label class="flex items-center gap-3 p-4 rounded-xl hover:bg-white/5 cursor-pointer transition-all">
+              <input type="checkbox" class="section-checkbox accent-blue-400 w-5 h-5" value="section-3" onchange="updateStartButton()">
+              <div class="flex-1">
+                <div class="font-medium text-lg">Section 3</div>
+                <div class="text-sm opacity-70 mt-1">ADT Tree, BST, Heapsort, Graphs, ADT Priority Queue</div>
+              </div>
+            </label>
+          </div>
+
+
+          <!-- Warning Box -->
+          <div class="mb-6 p-4 rounded-xl bg-amber-500/10 border border-amber-500/30">
+            <div class="flex items-start gap-3">
+              <svg class="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+              </svg>
+              <div class="flex-1">
+                <h3 class="font-semibold text-amber-300 mb-1">Important Notice</h3>
+                <ul class="text-sm opacity-90 space-y-1">
+                  <li>• The exam will run in <strong>protected fullscreen mode</strong></li>
+                  <li>• Alt-tabbing or switching windows is <strong>not permitted</strong></li>
+                  <li>• A countdown timer will track your progress</li>
+                  <li>• Leaving fullscreen will <strong>invalidate your exam</strong></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <!-- Start Button -->
+          <div class="flex items-center justify-end">
+            <button id="start-exam-btn" class="button-modern px-6 py-3 rounded-xl text-lg font-medium opacity-50 cursor-not-allowed transition-all" disabled onclick="startExam()">
+              Start Exam
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function updateStartButton() {
+        const startBtn = document.getElementById('start-exam-btn');
+        const checkboxes = document.querySelectorAll('.section-checkbox');
+        const anyChecked = Array.from(checkboxes).some(cb => cb.checked);
+        
+        if (anyChecked) {
+          startBtn.removeAttribute('disabled');
+          startBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+          startBtn.classList.add('hover:scale-105');
+        } else {
+          startBtn.setAttribute('disabled', '');
+          startBtn.classList.add('opacity-50', 'cursor-not-allowed');
+          startBtn.classList.remove('hover:scale-105');
+        }
+      }
+
+      function startExam() {
+        const selectedSections = Array.from(document.querySelectorAll('.section-checkbox:checked'))
+          .map(cb => cb.value);
+        
+        if (selectedSections.length === 0) {
+          return;
+        }
+
+        const questionCount = document.getElementById('question-count').value;
+        const timeLimit = document.getElementById('time-limit').value;
+
+        // TODO: Send exam configuration to backend/main process
+        console.log('Starting exam with:', {
+          sections: selectedSections,
+          questionCount,
+          timeLimit
+        });
+
+        // Placeholder: will trigger fullscreen exam session
+        alert(`Exam will start with:\nSections: ${selectedSections.join(', ')}\nQuestions: ${questionCount}\nTime: ${timeLimit} minutes\n\nFullscreen exam session coming soon!`);
+      }
+
+      function goBack() {
+        // @ts-expect-error exposed via preload
+        window.api?.openMenu?.();
+      }
+
+      // Initialize button state on load
+      document.addEventListener('DOMContentLoaded', () => {
+        updateStartButton();
+      });
+    </script>
+  </body>
+</html>

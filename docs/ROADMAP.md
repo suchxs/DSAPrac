@@ -11,13 +11,6 @@ Electron frontend + Rust judge backend
 
 ---
 
-## Milestone 0 — Repo health & developer UX
-
-- Create `README.md` (minimal) with build/run steps for Windows.
-- Add scripts to `electron/package.json` for `dev` (already present) and a `start:prod` helper.
-- Ensure Rust backend builds with `cargo build` and the electron main looks for the debug exe (already present).
-
----
 
 ## Milestone 1 — Basic Exam Mode (Frontend only)
 Why: Secure/controlled exam UX should be in place early.
@@ -48,6 +41,13 @@ Acceptance:
 - Monaco loads and can edit C code.
 - Clicking Run compiles + executes on the Rust judge and shows results in Debug Console.
 
+Implementation notes (coding exam UX):
+- Use Monaco Editor as the canonical editor in the app. Include a bundled dark theme and allow the user to switch themes; default to dark for exam/editor pages.
+- Configure Monaco for common languages (C, C++, Python, JavaScript). Expose editor settings (tab size, font family, minimap off for exams).
+- Provide two primary actions: "Run" (fast, runs visible/sample tests or a single selected test) and "Submit" (full run including hidden tests). Make the "Run" path especially fast by reusing compiled artifacts when possible.
+- Add a small settings panel for runtime flags and compiler flags when developers need them.
+- UX: stream per-test output to the Debug Console as results arrive (don't wait for all tests to finish).
+
 Dependencies: IPC path for judge RPC (either spawn `dsa-judge --stdio` from main or reuse existing backend process). Backend already has `--stdio` mode.
 
 ---
@@ -62,6 +62,12 @@ Tasks:
 Acceptance:
 - From the Electron renderer, you can call `window.api.judgeRun(request)` and receive a parsed `JudgeResponse` JSON.
 
+Additional judge integration requirements:
+- Support 'run-samples' vs 'submit' modes. 'run-samples' should only execute visible tests and return results quickly; 'submit' executes the full suite including hidden tests.
+- Support running a single testcase from the editor ("Check test case") so students get near-instant feedback for that case.
+- Ensure the judge protocol supports three basic operations: compile-only, run-only (reuse compiled binary), and compile+run. That lets the frontend request minimal work when the user iterates.
+- Stream partial results and logs to the renderer (in JSON events) for immediate UI updates.
+
 ---
 
 ## Milestone 4 — Question data model & CRUD UI (Frontend + Files)
@@ -75,6 +81,22 @@ Tasks:
 Acceptance:
 - Add/edit/delete problems via UI and they persist to `questions/` folder.
 - Problems appear in Practice -> Practical listing.
+
+Theoretical questions (file-first approach + optional SQLite index):
+- Store each theoretical question as a Markdown file with YAML frontmatter for metadata. Example path: `content/theory/section-3/adt-priority-queue.md`.
+- Frontmatter fields: id, title, tags, difficulty, created_at, updated_at, answered, total, srs (ease, interval, repetitions, due).
+- The Markdown body contains the question, optional multiple-choice options, and an explanation/answer section.
+- Keep SRS metadata in the frontmatter (so cards remain portable). Build a small background indexer that mirrors essential metadata into a local SQLite DB for fast querying, filtering by tag/section/due, and aggregated stats.
+- UI: add a card editor that writes markdown files and validates frontmatter. Also add import/export (zip of markdown files) for sharing decks.
+
+Theory exam (randomized MCQ card session):
+- Exam configuration: provide a configuration page where the user selects scope (tags, sections, difficulty), number of questions, and whether to include previously-missed items.
+- Session behavior: the app randomizes questions from the selected scope and starts an exam session. Each question is presented as a multiple-choice card with at least 6 choices (realistic distractors should be generated or authored for MCQs).
+- Question format: store MCQ choices in the frontmatter or as structured data in the card file (choice text + is_correct flag). Ensure a minimum of 6 choices per MCQ; for cards authored with fewer choices, the editor should require adding distractors or auto-generate plausible distractors when possible.
+- Answering & scoring: during the session the user picks one answer per question. At the end of the session, show a score summary (correct count, total, percentage) and optionally per-question feedback (correct answer and explanation).
+- Post-session persistence (future SQLite): when SQLite indexing is enabled, store each exam attempt: attempt_id, date, scope, question results (question_id, chosen_choice, correct_boolean, time_taken). This enables tracking performance over time and per-question statistics.
+- Cram session suggestions: use stored per-question performance to recommend a cram session consisting of questions the user performed poorly on (wrong answers or low accuracy). The recommendation can be by tag or a quick "Remedial session" option.
+- Acceptance: "Start Theory Quiz" launches a randomized MCQ session based on config, enforces >=6 choices per MCQ, scores correctly, and stores attempt data when SQLite indexing is enabled.
 
 
 ---
@@ -125,6 +147,12 @@ What to implement:
 
 Acceptance:
 - Run/Compile is snappy (e.g., < 1s for trivial programs on modern dev machines). Measured in-house.
+
+Performance tips specific to the app:
+- Keep a persistent judge process (`--stdio` server) to avoid spawn/teardown overhead.
+- Implement a compiled artifact cache keyed by (language, sources hash, compile-flags) and allow the frontend to request "compile-only" so subsequent runs are instant.
+- For single-test checks, only run the test case input against the cached binary; do not recompile or run the full suite whenever possible.
+- Order testcases by estimated runtime to surface fast feedback earlier and stream results to the UI.
 
 
 ---

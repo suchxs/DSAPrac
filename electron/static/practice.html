@@ -132,6 +132,62 @@
         </div>
       </div>
 
+      <!-- Practice Activity Heatmap -->
+      <div class="mt-6">
+        <div class="glass-card p-6">
+          <div class="flex items-center justify-between mb-6">
+            <div>
+              <h2 class="text-xl font-semibold mb-1">Practice Activity</h2>
+              <p class="text-sm opacity-80">Keep your streak going!</p>
+            </div>
+            <div class="flex gap-6">
+              <div class="text-center">
+                <div class="text-2xl font-bold text-blue-400" id="current-streak">0</div>
+                <div class="text-xs opacity-70 mt-1">Current Streak</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold" style="color: #9dfaf8;" id="longest-streak">0</div>
+                <div class="text-xs opacity-70 mt-1">Longest Streak</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Heatmap Grid -->
+          <div class="overflow-x-auto">
+            <div class="inline-block min-w-full">
+              <div class="flex gap-1 text-xs opacity-60 mb-2 pl-8">
+                <span class="w-3"></span>
+                <span class="flex-1 text-center">Jan</span>
+                <span class="flex-1 text-center">Feb</span>
+                <span class="flex-1 text-center">Mar</span>
+                <span class="flex-1 text-center">Apr</span>
+                <span class="flex-1 text-center">May</span>
+                <span class="flex-1 text-center">Jun</span>
+                <span class="flex-1 text-center">Jul</span>
+                <span class="flex-1 text-center">Aug</span>
+                <span class="flex-1 text-center">Sep</span>
+                <span class="flex-1 text-center">Oct</span>
+                <span class="flex-1 text-center">Nov</span>
+                <span class="flex-1 text-center">Dec</span>
+              </div>
+              <div id="heatmap-container" class="flex gap-1">
+                <!-- Heatmap will be generated here -->
+              </div>
+              <div class="flex items-center gap-2 mt-4 text-xs opacity-70">
+                <span>Less</span>
+                <div class="flex gap-1">
+                  <div class="w-3 h-3 rounded-sm bg-white/5"></div>
+                  <div class="w-3 h-3 rounded-sm bg-blue-500/30"></div>
+                  <div class="w-3 h-3 rounded-sm bg-blue-500/50"></div>
+                  <div class="w-3 h-3 rounded-sm bg-blue-500/70"></div>
+                  <div class="w-3 h-3 rounded-sm bg-blue-500"></div>
+                </div>
+                <span>More</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
       
     </div>
 
@@ -269,43 +325,117 @@
         return `${y}-${m}-${day}`;
       }
 
-      function renderHeatmap() {}
-      function intensity(count) { return 'transparent'; }
+      function intensity(count) {
+        if (count === 0) return 'bg-white/5';
+        if (count <= 2) return 'bg-blue-500/30';
+        if (count <= 5) return 'bg-blue-500/50';
+        if (count <= 10) return 'bg-blue-500/70';
+        return 'bg-blue-500';
+      }
+
+      function renderHeatmap() {
+        const container = document.getElementById('heatmap-container');
+        if (!container) return;
+
+        const dates = generatePastYearDates();
+        const weeks = [];
+        let currentWeek = [];
+
+        // Group dates by week
+        dates.forEach((date, i) => {
+          const dayOfWeek = date.getDay();
+          if (i > 0 && dayOfWeek === 0) {
+            weeks.push(currentWeek);
+            currentWeek = [];
+          }
+          currentWeek.push(date);
+        });
+        if (currentWeek.length > 0) weeks.push(currentWeek);
+
+        // Render day labels
+        const dayLabels = document.createElement('div');
+        dayLabels.className = 'flex flex-col gap-1 text-xs opacity-60 pr-2';
+        ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(day => {
+          const label = document.createElement('div');
+          label.textContent = day;
+          label.className = 'h-3 flex items-center';
+          dayLabels.appendChild(label);
+        });
+        container.appendChild(dayLabels);
+
+        // Render weeks
+        weeks.forEach(week => {
+          const weekCol = document.createElement('div');
+          weekCol.className = 'flex flex-col gap-1';
+          
+          // Fill empty days at start of week
+          const firstDay = week[0].getDay();
+          for (let i = 0; i < firstDay; i++) {
+            const empty = document.createElement('div');
+            empty.className = 'w-3 h-3';
+            weekCol.appendChild(empty);
+          }
+
+          week.forEach(date => {
+            const key = dateKey(date);
+            const count = practiceActivity.get(key) || 0;
+            const cell = document.createElement('div');
+            cell.className = `w-3 h-3 rounded-sm ${intensity(count)} transition-all hover:ring-2 hover:ring-white/50 cursor-pointer`;
+            cell.title = `${key}: ${count} activities`;
+            weekCol.appendChild(cell);
+          });
+
+          container.appendChild(weekCol);
+        });
+      }
 
       function updateStreaks() {
-        const dates = []; 
-        let current = 0;
-        let longest = 0;
-        let running = 0;
-        let prevDate = null;
-        for (const d of dates) {
-          const key = dateKey(d);
-          const active = (practiceActivity.get(key) || 0) > 0;
-          if (active) {
-            if (prevDate && (prevDate - d) === 24*60*60*1000) {
-              running += 1;
-            } else {
-              running = 1;
-            }
-            longest = Math.max(longest, running);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Calculate current streak (counting backward from today)
+        let currentStreak = 0;
+        let checkDate = new Date(today);
+        
+        while (true) {
+          const key = dateKey(checkDate);
+          const count = practiceActivity.get(key) || 0;
+          if (count > 0) {
+            currentStreak++;
+            checkDate.setDate(checkDate.getDate() - 1);
           } else {
-            running = 0;
+            // Allow one day gap for current streak if we're just starting
+            if (currentStreak === 0 && checkDate.getTime() === today.getTime()) {
+              checkDate.setDate(checkDate.getDate() - 1);
+              continue;
+            }
+            break;
           }
-          prevDate = d;
         }
-        // Current streak: count back from today
-        current = 0;
-        const todayBack = [];
-        for (const d of todayBack) {
-          const key = dateKey(d);
-          const active = (practiceActivity.get(key) || 0) > 0;
-          if (current === 0 && !active) continue; // skip until first active day (today or earlier)
-          if (active) current += 1; else break;
-        }
+
+        // Calculate longest streak
+        const dates = generatePastYearDates();
+        let longestStreak = 0;
+        let tempStreak = 0;
+        
+        dates.forEach(date => {
+          const key = dateKey(date);
+          const count = practiceActivity.get(key) || 0;
+          if (count > 0) {
+            tempStreak++;
+            longestStreak = Math.max(longestStreak, tempStreak);
+          } else {
+            tempStreak = 0;
+          }
+        });
+
         const curEl = document.getElementById('current-streak');
         const longEl = document.getElementById('longest-streak');
-        if (curEl) curEl.textContent = String(current);
-        if (longEl) longEl.textContent = String(longest);
+        if (curEl) curEl.textContent = String(currentStreak);
+        if (longEl) longEl.textContent = String(longestStreak);
+        
+        // Render heatmap
+        renderHeatmap();
       }
     </script>
   </body>
