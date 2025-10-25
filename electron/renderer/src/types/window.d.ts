@@ -31,6 +31,13 @@ export interface ElectronAPI {
   stopTerminalExecution: (sessionId: string) => Promise<void>;
   onTerminalData: (callback: (data: TerminalDataPayload) => void) => () => void;
   onDataRefresh: (callback: (data: DataRefreshPayload) => void) => () => void;
+  // Practical Problem Solver APIs
+  openPracticalProblem: (questionId: string) => void;
+  getCurrentPracticalQuestion: () => Promise<PracticalQuestionRecord>;
+  savePracticalProgress: (payload: SavePracticalProgressPayload) => Promise<void>;
+  runPracticalCode: (payload: RunPracticalCodePayload) => Promise<RunPracticalCodeResult>;
+  submitPracticalSolution: (payload: SubmitPracticalSolutionPayload) => Promise<SubmitPracticalSolutionResult>;
+  recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -222,6 +229,47 @@ export interface TerminalDataPayload {
   exitCode?: number;
   executionTime?: number; // in milliseconds
   memoryUsage?: number; // in KB
+}
+
+export interface SavePracticalProgressPayload {
+  questionId: string;
+  files: { filename: string; content: string }[];
+}
+
+export interface RunPracticalCodePayload {
+  questionId: string;
+  files: { filename: string; content: string; language: 'c' | 'cpp' }[];
+}
+
+export interface RunPracticalCodeResult {
+  output?: string;
+  error?: string;
+  executionTime?: number;
+}
+
+export interface SubmitPracticalSolutionPayload {
+  questionId: string;
+  files: { filename: string; content: string; language: 'c' | 'cpp' }[];
+  testCases: TestCasePayload[];
+}
+
+export interface TestResult {
+  index: number;
+  passed: boolean;
+  actualOutput?: string;
+  expectedOutput?: string;
+  executionTime?: number;
+  memoryUsage?: number;
+  error?: string;
+}
+
+export interface SubmitPracticalSolutionResult {
+  testResults: TestResult[];
+}
+
+export interface RecordPracticalActivityPayload {
+  questionId: string;
+  points: number;
 }
 
 declare global {

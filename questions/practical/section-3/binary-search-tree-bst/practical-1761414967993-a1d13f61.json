@@ -1,0 +1,44 @@
+{
+  "id": "practical-1761414967993-a1d13f61",
+  "title": "niyoi",
+  "description": "testtt",
+  "difficulty": "Easy",
+  "section": "Section 3",
+  "lesson": "Binary Search Tree (BST)",
+  "files": [
+    {
+      "filename": "main.c",
+      "content": "#include <stdio.h>\n#include <string.h>\n\n\nint main(){\n\n    char name[100];\n    printf(\"Enter a string: \");\n    fgets(name, sizeof(name), stdin);\n    printf(\"\\nYou entered: %s\", name);\n    \n    return 0;\n}",
+      "is_locked": false,
+      "is_answer_file": true,
+      "is_hidden": false,
+      "language": "c"
+    }
+  ],
+  "test_cases": [
+    {
+      "input": "tenten",
+      "expected_output": "Enter a string: tenten\n\r\nYou entered: tenten",
+      "is_hidden": false,
+      "execution_time": 29,
+      "memory_usage": 0
+    },
+    {
+      "input": "qwrqwr",
+      "expected_output": "Enter a string: qwrqwr\n\r\nYou entered: qwrqwr",
+      "is_hidden": false,
+      "execution_time": 20,
+      "memory_usage": 0
+    },
+    {
+      "input": "damndamn",
+      "expected_output": "Enter a string: damndamn\n\r\nYou entered: damndamn",
+      "is_hidden": false,
+      "execution_time": 18,
+      "memory_usage": 0
+    }
+  ],
+  "image": "practical-1761414967993-a1d13f61.jpg",
+  "created_at": "2025-10-25T17:56:07.993Z",
+  "updated_at": "2025-10-25T19:00:39.331Z"
+}

@@ -5,6 +5,8 @@ import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 
 let mainWindow: BrowserWindow | null = null;
+let problemSolverWindow: BrowserWindow | null = null;
+let currentPracticalQuestion: any = null;
 let backendProcess: ReturnType<typeof spawn> | null = null;
 type PendingBackendRequest = {
   resolve: (value: any) => void;
@@ -571,12 +573,27 @@ function syncProgressTotals(progress: ProgressData): void {
     }
   }
 
-  // Update progress totals
+  // Update progress totals and ensure answered doesn't exceed total
   for (const [lessonName, count] of Object.entries(lessonCounts)) {
     if (!progress.theory[lessonName]) {
       progress.theory[lessonName] = { answered: 0, total: count, answeredQuestions: [] };
     } else {
       progress.theory[lessonName].total = count;
+      // If answered exceeds total, cap it at total
+      if (progress.theory[lessonName].answered > count) {
+        progress.theory[lessonName].answered = count;
+      }
+    }
+  }
+  
+  // Also set total to 0 for lessons with no questions
+  for (const lessonName of Object.keys(progress.theory)) {
+    if (!lessonCounts[lessonName]) {
+      progress.theory[lessonName].total = 0;
+      // If there are no questions, answered should also be 0
+      if (progress.theory[lessonName].answered > 0) {
+        progress.theory[lessonName].answered = 0;
+      }
     }
   }
 }
@@ -689,6 +706,16 @@ function startBackend() {
 app.whenReady().then(() => {
   // Remove menu bar
   Menu.setApplicationMenu(null);
+  
+  // Sync progress with actual question files on startup
+  try {
+    const progress = readProgress();
+    syncProgressTotals(progress);
+    writeProgress(progress);
+    console.log('[Startup] Progress synced with question files');
+  } catch (error) {
+    console.error('[Startup] Failed to sync progress:', error);
+  }
   
   startBackend();
   createWindow();
@@ -1169,15 +1196,29 @@ app.whenReady().then(() => {
       }
 
       const progress = readProgress();
-      if (oldLessonName !== payload.lesson) {
+      
+      // Sync progress totals with actual files to ensure accuracy
+      syncProgressTotals(progress);
+      
+      // Update progress if section or lesson changed
+      const sectionChanged = oldSectionLabel !== sectionDef.label;
+      const lessonChanged = oldLessonName !== payload.lesson;
+      
+      if (sectionChanged || lessonChanged) {
+        // Remove from old lesson
         const oldStats = progress.theory[oldLessonName] ?? { answered: 0, total: 0 };
         oldStats.total = Math.max(0, (oldStats.total ?? 0) - 1);
         progress.theory[oldLessonName] = oldStats;
 
+        // Add to new lesson
         const newStats = progress.theory[payload.lesson] ?? { answered: 0, total: 0 };
         newStats.total = (newStats.total ?? 0) + 1;
         progress.theory[payload.lesson] = newStats;
       }
+      
+      // Sync again after manual changes to ensure everything is correct
+      syncProgressTotals(progress);
+      
       writeProgress(progress);
       const counts = calculateQuestionCounts(progress);
       broadcastDataRefresh({ counts, progress });
@@ -1447,6 +1488,7 @@ app.whenReady().then(() => {
                   content: typeof f.content === 'string' ? f.content : '',
                   isLocked: !!f.is_locked,
                   isAnswerFile: !!f.is_answer_file,
+                  isHidden: !!f.is_hidden,
                   language: (f.language === 'c' || f.language === 'cpp') ? f.language : 'c',
                 }))
               : [];
@@ -1580,11 +1622,27 @@ app.whenReady().then(() => {
     const existingData = JSON.parse(rawData);
     const oldImageName = typeof existingData.image === 'string' && existingData.image.trim() ? existingData.image.trim() : undefined;
     const oldImagePath = oldImageName ? path.join(path.dirname(resolvedPath), oldImageName) : undefined;
+    
+    // Check if section or lesson changed (need to move file)
+    const oldSectionKey = Object.keys(SECTION_DEFINITIONS).find(
+      key => SECTION_DEFINITIONS[key].label === existingData.section
+    );
+    const oldLesson = existingData.lesson;
+    const needsMove = oldSectionKey !== sectionKey || oldLesson !== lesson;
 
     let newImageFileName: string | undefined;
     let newImageFilePath: string | undefined;
 
     try {
+      // Determine the target directory (might be different if moving)
+      const targetDir = needsMove 
+        ? path.join(baseDir, slugify(sectionDef.label), slugify(lesson)) 
+        : path.dirname(resolvedPath);
+      
+      if (needsMove) {
+        ensureDirExists(targetDir);
+      }
+      
       if (image !== undefined) {
         if (oldImagePath && fs.existsSync(oldImagePath)) {
           try {
@@ -1598,7 +1656,7 @@ app.whenReady().then(() => {
           const { buffer, extension } = parseImageDataUrl(image.dataUrl);
           const questionId = typeof existingData.id === 'string' ? existingData.id : payload.id;
           newImageFileName = `${questionId}.${extension}`;
-          newImageFilePath = path.join(path.dirname(resolvedPath), newImageFileName);
+          newImageFilePath = path.join(targetDir, newImageFileName);
           fs.writeFileSync(newImageFilePath, buffer);
         }
       } else {
@@ -1618,6 +1676,7 @@ app.whenReady().then(() => {
           content: f.content.replace(/\r\n/g, '\n'),
           is_locked: f.isLocked,
           is_answer_file: f.isAnswerFile,
+          is_hidden: f.isHidden,
           language: f.language,
         })),
         test_cases: normalizedTestCases,
@@ -1625,7 +1684,47 @@ app.whenReady().then(() => {
         updated_at: updatedAt,
       };
 
-      fs.writeFileSync(resolvedPath, JSON.stringify(updatedData, null, 2), 'utf-8');
+      let finalPath = resolvedPath;
+      
+      // If section or lesson changed, move the file to new directory
+      if (needsMove) {
+        const sectionSlug = slugify(sectionDef.label);
+        const lessonSlug = slugify(lesson);
+        const newDir = path.join(baseDir, sectionSlug, lessonSlug);
+        ensureDirExists(newDir);
+        
+        const questionId = existingData.id;
+        const newPath = path.join(newDir, `${questionId}.json`);
+        
+        // Write to new location
+        fs.writeFileSync(newPath, JSON.stringify(updatedData, null, 2), 'utf-8');
+        
+        // Move old image if it exists and we didn't upload a new one
+        if (!image && oldImagePath && fs.existsSync(oldImagePath)) {
+          const newImagePath = path.join(newDir, oldImageName!);
+          fs.copyFileSync(oldImagePath, newImagePath);
+          fs.unlinkSync(oldImagePath);
+        }
+        
+        // Delete old file
+        fs.unlinkSync(resolvedPath);
+        
+        // Try to remove old directory if empty
+        try {
+          const oldDir = path.dirname(resolvedPath);
+          const remainingFiles = fs.readdirSync(oldDir);
+          if (remainingFiles.length === 0) {
+            fs.rmdirSync(oldDir);
+          }
+        } catch {
+          // Ignore errors when removing old directory
+        }
+        
+        finalPath = newPath;
+      } else {
+        // Just update in place
+        fs.writeFileSync(resolvedPath, JSON.stringify(updatedData, null, 2), 'utf-8');
+      }
 
       const progress = readProgress();
       const counts = calculateQuestionCounts(progress);
@@ -1989,23 +2088,29 @@ app.whenReady().then(() => {
       // Stream stdout to renderer
       executeProcess.stdout.on('data', (data) => {
         console.log('[Terminal] stdout data:', JSON.stringify(data.toString()));
-        if (mainWindow) {
-          mainWindow.webContents.send('terminal:data', {
-            sessionId,
-            data: data.toString(),
-          });
-        }
+        // Send to all windows
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('terminal:data', {
+              sessionId,
+              data: data.toString(),
+            });
+          }
+        });
       });
 
       // Stream stderr to renderer
       executeProcess.stderr.on('data', (data) => {
         console.log('[Terminal] stderr data:', JSON.stringify(data.toString()));
-        if (mainWindow) {
-          mainWindow.webContents.send('terminal:data', {
-            sessionId,
-            error: data.toString(),
-          });
-        }
+        // Send to all windows
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('terminal:data', {
+              sessionId,
+              error: data.toString(),
+            });
+          }
+        });
       });
 
       // Handle process exit
@@ -2020,15 +2125,18 @@ app.whenReady().then(() => {
           clearInterval(currentSession.memoryMonitor);
         }
         
-        if (mainWindow) {
-          mainWindow.webContents.send('terminal:data', {
-            sessionId,
-            exit: true,
-            exitCode: code || 0,
-            executionTime, // in milliseconds
-            memoryUsage: currentSession?.peakMemoryKB || 0, // in KB
-          });
-        }
+        // Send to all windows
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('terminal:data', {
+              sessionId,
+              exit: true,
+              exitCode: code || 0,
+              executionTime, // in milliseconds
+              memoryUsage: currentSession?.peakMemoryKB || 0, // in KB
+            });
+          }
+        });
 
         // Clean up session and temp directory
         terminalSessions.delete(sessionId);
@@ -2041,14 +2149,17 @@ app.whenReady().then(() => {
 
       // Handle process error
       executeProcess.on('error', (err) => {
-        if (mainWindow) {
-          mainWindow.webContents.send('terminal:data', {
-            sessionId,
-            error: `Execution error: ${err.message}`,
-            exit: true,
-            exitCode: 1,
-          });
-        }
+        // Send to all windows
+        BrowserWindow.getAllWindows().forEach(win => {
+          if (!win.isDestroyed()) {
+            win.webContents.send('terminal:data', {
+              sessionId,
+              error: `Execution error: ${err.message}`,
+              exit: true,
+              exitCode: 1,
+            });
+          }
+        });
 
         // Clean up session and temp directory
         terminalSessions.delete(sessionId);
@@ -2156,6 +2267,423 @@ app.whenReady().then(() => {
     if (mainWindow) {
       mainWindow.setSize(1400, 1080);
       mainWindow.webContents.send('navigate', '/question-maker');
+    }
+  });
+
+  // ============ Practical Problem Solver Window ============
+  ipcMain.on('open-practical-problem', async (_event, questionId: string) => {
+    try {
+      // Load the question data - use the existing listQuestions handler logic
+      const records: PracticalQuestionRecord[] = [];
+      const baseDir = getPracticalBaseDir();
+      
+      if (fs.existsSync(baseDir)) {
+        for (const sectionKey of Object.keys(SECTION_DEFINITIONS)) {
+          const sectionDef = SECTION_DEFINITIONS[sectionKey];
+          const sectionDir = path.join(baseDir, slugify(sectionDef.label));
+          if (!fs.existsSync(sectionDir)) continue;
+
+          for (const lessonName of sectionDef.lessons) {
+            const lessonDir = path.join(sectionDir, slugify(lessonName));
+            if (!fs.existsSync(lessonDir)) continue;
+
+            const files = fs
+              .readdirSync(lessonDir)
+              .filter((file) => file.toLowerCase().endsWith('.json'))
+              .sort();
+
+            for (const file of files) {
+              const filePath = path.join(lessonDir, file);
+              try {
+                const rawData = fs.readFileSync(filePath, 'utf-8');
+                const data = JSON.parse(rawData);
+
+                const id = typeof data.id === 'string' && data.id.trim() ? data.id.trim() : path.basename(file, path.extname(file));
+                
+                if (id === questionId) {
+                  // Found the question - parse it fully
+                  const title = typeof data.title === 'string' ? data.title : 'Untitled';
+                  const description = typeof data.description === 'string' ? data.description : '';
+                  const difficulty = ['Easy', 'Medium', 'Hard'].includes(data.difficulty) ? data.difficulty : 'Medium';
+
+                  const parsedFiles: CodeFilePayload[] = Array.isArray(data.files)
+                    ? data.files.map((f: any) => ({
+                        filename: typeof f.filename === 'string' ? f.filename : '',
+                        content: typeof f.content === 'string' ? f.content : '',
+                        isLocked: !!f.is_locked,
+                        isAnswerFile: !!f.is_answer_file,
+                        isHidden: !!f.is_hidden,
+                        language: f.language === 'cpp' ? 'cpp' : 'c',
+                      }))
+                    : [];
+
+                  const testCases: TestCasePayload[] = Array.isArray(data.test_cases)
+                    ? data.test_cases.map((tc: any) => ({
+                        input: typeof tc.input === 'string' ? tc.input : '',
+                        expectedOutput: typeof tc.expected_output === 'string' ? tc.expected_output : '',
+                        isHidden: !!tc.is_hidden,
+                        executionTime: typeof tc.execution_time === 'number' ? tc.execution_time : undefined,
+                        memoryUsage: typeof tc.memory_usage === 'number' ? tc.memory_usage : undefined,
+                      }))
+                    : [];
+
+                  let imageDataUrl: string | null = null;
+                  if (data.image && typeof data.image === 'string') {
+                    const imageName = data.image;
+                    const ext = path.extname(imageName).toLowerCase();
+                    const imagePath = path.join(lessonDir, imageName);
+                    if (fs.existsSync(imagePath)) {
+                      const imageBuffer = fs.readFileSync(imagePath);
+                      const mimeType =
+                        ext === '.png' ? 'image/png' :
+                        ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+                        ext === '.gif' ? 'image/gif' :
+                        'image/png';
+                      imageDataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+                    }
+                  }
+
+                  currentPracticalQuestion = {
+                    id,
+                    title,
+                    description,
+                    difficulty,
+                    sectionKey,
+                    section: sectionDef.label,
+                    lesson: lessonName,
+                    filePath,
+                    files: parsedFiles,
+                    testCases,
+                    imageDataUrl,
+                  };
+
+                  // Create new problem solver window
+                  const preloadPath = path.join(__dirname, 'preload.js');
+                  const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
+
+                  const iconPath = (() => {
+                    if (app.isPackaged) {
+                      return path.join(process.resourcesPath, 'icons', 'icon.ico');
+                    }
+                    return path.join(__dirname, '..', 'static', 'icons', 'icon.ico');
+                  })();
+
+                  // Close existing problem solver window if open
+                  if (problemSolverWindow && !problemSolverWindow.isDestroyed()) {
+                    problemSolverWindow.close();
+                  }
+
+                  problemSolverWindow = new BrowserWindow({
+                    title,
+                    width: 1600,
+                    height: 900,
+                    icon: nativeImage.createFromPath(iconPath),
+                    frame: false,
+                    backgroundColor: '#000000',
+                    titleBarStyle: 'hidden',
+                    webPreferences: {
+                      nodeIntegration: false,
+                      contextIsolation: true,
+                      preload: preloadPath,
+                    },
+                  });
+
+                  // Load the problem solver route
+                  if (isDev) {
+                    problemSolverWindow.loadURL('http://localhost:5173/#/practical-problem-solver').catch((err) => {
+                      console.error('Failed to load problem solver:', err);
+                    });
+                  } else {
+                    problemSolverWindow.loadFile(path.join(__dirname, '../renderer/index.html'), {
+                      hash: '/practical-problem-solver',
+                    });
+                  }
+
+                  // Clean up when window is closed
+                  problemSolverWindow.on('closed', () => {
+                    problemSolverWindow = null;
+                    currentPracticalQuestion = null;
+                  });
+
+                  // F12 to toggle DevTools
+                  problemSolverWindow.webContents.on('before-input-event', (event, input) => {
+                    if (input.key === 'F12') {
+                      if (problemSolverWindow && problemSolverWindow.webContents.isDevToolsOpened()) {
+                        problemSolverWindow.webContents.closeDevTools();
+                      } else if (problemSolverWindow) {
+                        problemSolverWindow.webContents.openDevTools();
+                      }
+                      event.preventDefault();
+                    }
+                  });
+
+                  return; // Found and opened
+                }
+              } catch (err) {
+                console.error(`Failed to parse ${filePath}:`, err);
+              }
+            }
+          }
+        }
+      }
+      
+      console.error('Question not found:', questionId);
+    } catch (error) {
+      console.error('Failed to open practical problem:', error);
+    }
+  });
+
+  ipcMain.handle('get-current-practical-question', async () => {
+    return currentPracticalQuestion;
+  });
+
+  ipcMain.handle('save-practical-progress', async (_event, payload: { questionId: string; files: { filename: string; content: string }[] }) => {
+    try {
+      // Save student's progress to a separate progress file
+      const userDataDir = app.getPath('userData');
+      const progressDir = path.join(userDataDir, 'practical-progress');
+      
+      if (!fs.existsSync(progressDir)) {
+        fs.mkdirSync(progressDir, { recursive: true });
+      }
+
+      const progressFile = path.join(progressDir, `${payload.questionId}.json`);
+      fs.writeFileSync(progressFile, JSON.stringify(payload.files, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save practical progress:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('run-practical-code', async (_event, payload: { questionId: string; files: { filename: string; content: string; language: string }[] }) => {
+    try {
+      // Create a temporary directory for compilation
+      const tempDir = path.join(app.getPath('temp'), `dsa-run-${Date.now()}`);
+      ensureDirExists(tempDir);
+
+      try {
+        // Write all code files to temp directory
+        for (const file of payload.files) {
+          const filePath = path.join(tempDir, file.filename);
+          fs.writeFileSync(filePath, file.content, 'utf-8');
+        }
+
+        // Determine the language
+        const language = payload.files[0].language;
+        const executableName = 'program.exe';
+        const executablePath = path.join(tempDir, executableName);
+
+        // Compile the code
+        const compiler = language === 'cpp' ? 'g++' : 'gcc';
+        const sourceFiles = payload.files
+          .filter(f => !f.filename.match(/\.(h|hpp)$/i))
+          .map(f => f.filename);
+
+        const compileArgs = [...sourceFiles, '-o', executableName];
+
+        const compileResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
+          const compileProcess = spawn(compiler, compileArgs, { cwd: tempDir });
+          let compileError = '';
+
+          compileProcess.stderr.on('data', (data) => {
+            compileError += data.toString();
+          });
+
+          compileProcess.on('close', (code) => {
+            if (code !== 0) {
+              resolve({ success: false, error: compileError });
+            } else {
+              resolve({ success: true });
+            }
+          });
+        });
+
+        if (!compileResult.success) {
+          return { error: `Compilation failed:\n${compileResult.error}` };
+        }
+
+        // Run the compiled program
+        const runResult = await new Promise<{ output: string; error: string }>((resolve) => {
+          const runProcess = spawn(executablePath, [], { cwd: tempDir });
+          let output = '';
+          let error = '';
+
+          runProcess.stdout.on('data', (data) => {
+            output += data.toString();
+          });
+
+          runProcess.stderr.on('data', (data) => {
+            error += data.toString();
+          });
+
+          runProcess.on('close', () => {
+            resolve({ output, error });
+          });
+
+          // Send empty input
+          runProcess.stdin.end();
+        });
+
+        return {
+          output: runResult.output || 'Code executed successfully',
+          error: runResult.error,
+        };
+      } finally {
+        // Clean up temp directory
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch (err) {
+          console.warn('Failed to clean up temp directory:', err);
+        }
+      }
+    } catch (error: any) {
+      return { error: error.message || 'Failed to run code' };
+    }
+  });
+
+  ipcMain.handle('submit-practical-solution', async (_event, payload: { questionId: string; files: any[]; testCases: any[] }) => {
+    try {
+      const testResults: any[] = [];
+      const tempDir = path.join(app.getPath('temp'), `dsa-submit-${Date.now()}`);
+      ensureDirExists(tempDir);
+
+      try {
+        // Write all code files to temp directory
+        for (const file of payload.files) {
+          const filePath = path.join(tempDir, file.filename);
+          fs.writeFileSync(filePath, file.content, 'utf-8');
+        }
+
+        // Compile once
+        const language = payload.files[0].language;
+        const executableName = 'program.exe';
+        const compiler = language === 'cpp' ? 'g++' : 'gcc';
+        const sourceFiles = payload.files
+          .filter((f: any) => !f.filename.match(/\.(h|hpp)$/i))
+          .map((f: any) => f.filename);
+
+        const compileArgs = [...sourceFiles, '-o', executableName];
+
+        const compileResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
+          const compileProcess = spawn(compiler, compileArgs, { cwd: tempDir });
+          let compileError = '';
+
+          compileProcess.stderr.on('data', (data) => {
+            compileError += data.toString();
+          });
+
+          compileProcess.on('close', (code) => {
+            if (code !== 0) {
+              resolve({ success: false, error: compileError });
+            } else {
+              resolve({ success: true });
+            }
+          });
+        });
+
+        if (!compileResult.success) {
+          throw new Error(`Compilation failed:\n${compileResult.error}`);
+        }
+
+        // Run each test case - use same approach as Rust backend judge
+        const executablePath = path.join(tempDir, executableName);
+        
+        for (let i = 0; i < payload.testCases.length; i++) {
+          const testCase = payload.testCases[i];
+          
+          try {
+            const runResult = await new Promise<{ output: string; error: string }>((resolve) => {
+              const runProcess = spawn(executablePath, [], { cwd: tempDir });
+              let output = '';
+              let error = '';
+
+              runProcess.stdout.on('data', (data) => {
+                output += data.toString();
+              });
+
+              runProcess.stderr.on('data', (data) => {
+                error += data.toString();
+              });
+
+              runProcess.on('close', () => {
+                resolve({ output, error });
+              });
+
+              // Send test case input to stdin
+              runProcess.stdin.write(testCase.input);
+              runProcess.stdin.end();
+            });
+
+            // Simulate terminal echo behavior to match recorded output
+            let actualOutput = runResult.output;
+            const inputText = testCase.input.replace(/\n$/, ''); // Remove trailing \n from input
+            
+            // Find where to insert the input - look for \r\n sequence (Windows line ending)
+            const crlfIndex = actualOutput.indexOf('\r\n');
+            
+            if (crlfIndex !== -1 && inputText.length > 0) {
+              // Insert the input + "\n\r\n" before the program's \r\n
+              // Original: "Enter a string: \r\n\nYou entered: tenten\n"
+              // Insert "tenten\n\r\n" before the first \r\n
+              // Result: "Enter a string: tenten\n\r\n\nYou entered: tenten\n"
+              actualOutput = 
+                actualOutput.substring(0, crlfIndex) + 
+                inputText + '\n\r\n' + 
+                actualOutput.substring(crlfIndex + 2); // Skip the original \r\n
+            }
+            
+            const expectedOutput = testCase.expectedOutput.trim();
+            const passed = actualOutput.trim() === expectedOutput;
+
+            testResults.push({
+              index: i,
+              passed,
+              actualOutput: actualOutput.trim(),
+              expectedOutput,
+            });
+          } catch (error: any) {
+            testResults.push({
+              index: i,
+              passed: false,
+              error: error.message || 'Execution failed',
+            });
+          }
+        }
+
+        return { testResults };
+      } finally {
+        // Clean up temp directory
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch (err) {
+          console.warn('Failed to clean up temp directory:', err);
+        }
+      }
+    } catch (error: any) {
+      throw new Error(`Submission failed: ${error.message}`);
+    }
+  });
+
+  ipcMain.handle('record-practical-activity', async (_event, payload: { questionId: string; points: number }) => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const progress = readProgress();
+      
+      // Add points to activity
+      if (!progress.activity[today]) {
+        progress.activity[today] = 0;
+      }
+      progress.activity[today] += payload.points;
+
+      // Mark question as having activity (could track completion differently)
+      if (!progress.practical[payload.questionId]) {
+        progress.practical[payload.questionId] = { completed: false };
+      }
+
+      writeProgress(progress);
+    } catch (error) {
+      console.error('Failed to record practical activity:', error);
+      throw error;
     }
   });
 

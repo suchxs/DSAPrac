@@ -188,7 +188,7 @@ const PracticalQuestionLibrary: React.FC = () => {
 
   return (
     <div className="h-screen bg-neutral-950 text-neutral-50 overflow-hidden">
-      <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-12">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-12 overflow-y-auto scrollbar-thin scrollbar-track-neutral-900 scrollbar-thumb-neutral-700 hover:scrollbar-thumb-neutral-600">
         <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Practical Problem Library</h1>
@@ -226,7 +226,7 @@ const PracticalQuestionLibrary: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-track-neutral-900 scrollbar-thumb-neutral-700 hover:scrollbar-thumb-neutral-600">
+          <div className="flex-1">
             <div className="space-y-10">
             {groupedQuestions.map((section) => (
               <div key={section.sectionKey} className="space-y-6">
