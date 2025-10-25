@@ -24,6 +24,12 @@ export interface ElectronAPI {
   updatePracticalQuestion: (payload: UpdatePracticalQuestionPayload) => Promise<QuestionCounts>;
   deletePracticalQuestion: (payload: DeletePracticalQuestionPayload) => Promise<QuestionCounts>;
   executeCodeWithInput: (payload: ExecuteCodePayload) => Promise<ExecuteCodeResult>;
+  runJudge: (request: JudgeRequest) => Promise<JudgeResponse>;
+  // Streaming terminal APIs
+  startTerminalExecution: (payload: StartTerminalExecutionPayload) => Promise<StartTerminalExecutionResult>;
+  writeToTerminal: (sessionId: string, data: string) => Promise<void>;
+  stopTerminalExecution: (sessionId: string) => Promise<void>;
+  onTerminalData: (callback: (data: TerminalDataPayload) => void) => () => void;
   onDataRefresh: (callback: (data: DataRefreshPayload) => void) => () => void;
   // Window controls
   windowMinimize: () => void;
@@ -109,6 +115,8 @@ export interface TestCasePayload {
   input: string;
   expectedOutput: string;
   isHidden: boolean;
+  executionTime?: number; // in milliseconds
+  memoryUsage?: number; // in KB
 }
 
 export interface CodeFilePayload {
@@ -176,9 +184,50 @@ export interface ExecuteCodeResult {
   executionTime?: number;
 }
 
+export interface NormalizationOptions {
+  normalize_crlf: boolean;
+  ignore_extra_whitespace: boolean;
+}
+
+export interface JudgeRequest {
+  code: string;
+  problem: any;
+  language: string;
+  normalization?: NormalizationOptions;
+}
+
+export interface JudgeResponse {
+  success: boolean;
+  result?: any;
+  error?: string;
+  status: string;
+}
+
+export interface StartTerminalExecutionPayload {
+  files: CodeFilePayload[];
+}
+
+export interface StartTerminalExecutionResult {
+  success: boolean;
+  sessionId?: string;
+  error?: string;
+}
+
+export interface TerminalDataPayload {
+  sessionId: string;
+  data?: string;
+  error?: string;
+  exit?: boolean;
+  exitCode?: number;
+  executionTime?: number; // in milliseconds
+  memoryUsage?: number; // in KB
+}
+
 declare global {
   interface Window {
     api: ElectronAPI;
+    terminalWrite?: (data: string) => void;
+    terminalClear?: () => void;
   }
 }
 
