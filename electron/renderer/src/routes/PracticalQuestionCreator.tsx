@@ -10,6 +10,7 @@ interface CodeFile {
   content: string;
   isLocked: boolean;
   isAnswerFile: boolean;
+  isHidden: boolean;
   language: 'c' | 'cpp';
 }
 
@@ -43,6 +44,7 @@ const createCodeFile = (index: number, language: 'c' | 'cpp', filename?: string,
     content,
     isLocked: false,
     isAnswerFile: false,
+    isHidden: false,
     language,
   };
 };
@@ -319,6 +321,7 @@ const PracticalQuestionCreator: React.FC = () => {
           content: f.content,
           isLocked: f.isLocked,
           isAnswerFile: f.isAnswerFile,
+          isHidden: f.isHidden,
           language: f.language,
         })),
       });
@@ -543,6 +546,9 @@ const PracticalQuestionCreator: React.FC = () => {
         recordBufferRef.current = newBuffer;
         setRecordBuffer(newBuffer);
         
+        // Remove last character from recorded output too
+        setRecordedOutput(prev => prev.slice(0, -1));
+        
         // Visual feedback: move cursor back, write space, move cursor back again
         if (window.terminalWrite) {
           window.terminalWrite('\b \b');
@@ -558,16 +564,17 @@ const PracticalQuestionCreator: React.FC = () => {
       // Track the input that was sent
       setRecordedInput(prev => prev + lineToSend);
       
+      // Add newline to recorded output (user typed characters were already added)
+      setRecordedOutput(prev => prev + '\n');
+      
       // Send to backend
       if (recordSessionId) {
         window.api.writeToTerminal(recordSessionId, lineToSend);
       }
       
-      // Visual feedback and capture
+      // Visual feedback - newline
       if (window.terminalWrite) {
-        const displayData = '\r\n';
-        window.terminalWrite(displayData);
-        setRecordedOutput(prev => prev + displayData);
+        window.terminalWrite('\r\n');
       }
       
       // Clear buffer for next line
@@ -581,8 +588,11 @@ const PracticalQuestionCreator: React.FC = () => {
       const newBuffer = recordBufferRef.current + data;
       recordBufferRef.current = newBuffer;
       setRecordBuffer(newBuffer);
+      
+      // Add character to recorded output (as user types)
       setRecordedOutput(prev => prev + data);
       
+      // Echo the character to terminal
       if (window.terminalWrite) {
         window.terminalWrite(data);
       }
@@ -832,6 +842,7 @@ const PracticalQuestionCreator: React.FC = () => {
           content: f.content.replace(/\r\n/g, '\n'),
           isLocked: f.isLocked,
           isAnswerFile: f.isAnswerFile,
+          isHidden: f.isHidden,
           language: f.language,
         })),
         testCases: testCasesWithMetrics.map((tc) => ({
@@ -1417,9 +1428,26 @@ const PracticalQuestionCreator: React.FC = () => {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     className="h-3 w-3 text-amber-400"
+                    title="Locked (read-only)"
                   >
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                     <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                )}
+                {file.isHidden && (
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-3 w-3 text-purple-400"
+                    title="Hidden (not shown to students)"
+                  >
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
                   </svg>
                 )}
                 <button
@@ -1469,8 +1497,9 @@ const PracticalQuestionCreator: React.FC = () => {
 
           {/* File Configuration Bar */}
           {activeFile && (
-            <div className="h-14 border-b border-neutral-800 bg-neutral-900/30 flex items-center justify-between px-4 shrink-0">
-              <div className="flex items-center gap-4">
+            <div className="border-b border-neutral-800 bg-neutral-900/30 shrink-0">
+              {/* Top row: Filename and Language */}
+              <div className="h-12 flex items-center gap-4 px-4 border-b border-neutral-800/50">
                 <input
                   type="text"
                   value={activeFile.filename}
@@ -1487,7 +1516,8 @@ const PracticalQuestionCreator: React.FC = () => {
                   <option value="cpp">C++</option>
                 </select>
               </div>
-              <div className="flex items-center gap-4">
+              {/* Bottom row: File Options */}
+              <div className="h-10 flex items-center gap-6 px-4">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -1508,6 +1538,17 @@ const PracticalQuestionCreator: React.FC = () => {
                   />
                   <span className="text-xs font-medium text-neutral-400">
                     Lock file (read-only)
+                  </span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={activeFile.isHidden}
+                    onChange={(e) => handleFileChange(activeFile.id, 'isHidden', e.target.checked)}
+                    className="rounded border-neutral-700 bg-neutral-900 text-purple-500 focus:ring-purple-500 focus:ring-offset-neutral-950"
+                  />
+                  <span className="text-xs font-medium text-neutral-400">
+                    Hidden file (not shown to students)
                   </span>
                 </label>
               </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import GlassCard from '../components/GlassCard';
 
 interface ProgressData {
@@ -56,6 +57,7 @@ const sections: Section[] = [
 ];
 
 const PracticeMode: React.FC = () => {
+  const navigate = useNavigate();
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
   const [progress, setProgress] = useState<ProgressData | null>(null);
   const [practicalQuestions, setPracticalQuestions] = useState<PracticalQuestionRecord[]>([]);
@@ -126,8 +128,10 @@ const PracticeMode: React.FC = () => {
   };
 
   const handleStartTheory = () => {
-    // TODO: Implement theory quiz start
-    console.log('Starting theory quiz with tags:', Array.from(selectedTags));
+    if (selectedTags.size === 0) return;
+    navigate('/practice/theory-quiz', { 
+      state: { selectedTags: Array.from(selectedTags) } 
+    });
   };
 
   const handleSelectPractical = (questionId: string) => {

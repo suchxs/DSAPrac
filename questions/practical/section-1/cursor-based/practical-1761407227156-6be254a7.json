@@ -1,0 +1,57 @@
+{
+  "id": "practical-1761407227156-6be254a7",
+  "title": "qweewq",
+  "description": "qweqweweq",
+  "difficulty": "Hard",
+  "section": "Section 1",
+  "lesson": "Cursor-Based",
+  "files": [
+    {
+      "filename": "main.c",
+      "content": "#include <stdio.h>\n#include \"sum.h\"\n\n\n\nint main(){\n\n    int a, b;\n    printf(\"Numbers: \");\n    scanf(\"%d %d\", &a, &b);\n    \n    \n    printf(\"\\nSum: %d\", numSum(a, b));\n\n    return 0;\n}",
+      "is_locked": true,
+      "is_answer_file": false,
+      "language": "c"
+    },
+    {
+      "filename": "sum.c",
+      "content": "#include \"sum.h\"\n\n\nint numSum(int a, int b){\n\n\n    return a + b;\n}",
+      "is_locked": false,
+      "is_answer_file": true,
+      "language": "c"
+    },
+    {
+      "filename": "sum.h",
+      "content": "#ifndef SUM_H\n#define SUM_H\n\n// Your header declarations here\n#include <stdio.h>\nint numSum(int a, int b);\n#endif // SUM_H\n",
+      "is_locked": true,
+      "is_answer_file": false,
+      "language": "c"
+    }
+  ],
+  "test_cases": [
+    {
+      "input": "12\n16",
+      "expected_output": "Numbers: 12\n16\n\r\nSum: 28",
+      "is_hidden": false,
+      "execution_time": 2060,
+      "memory_usage": 5952
+    },
+    {
+      "input": "16\n18",
+      "expected_output": "Numbers: 16\n18\n\r\nSum: 34",
+      "is_hidden": false,
+      "execution_time": 2208,
+      "memory_usage": 5952
+    },
+    {
+      "input": "99\n99",
+      "expected_output": "Numbers: 99\n99\n\r\nSum: 198",
+      "is_hidden": false,
+      "execution_time": 2439,
+      "memory_usage": 5952
+    }
+  ],
+  "image": "practical-1761407227156-6be254a7.jpg",
+  "created_at": "2025-10-25T15:47:07.155Z",
+  "updated_at": "2025-10-25T15:47:07.155Z"
+}

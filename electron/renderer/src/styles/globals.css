@@ -44,6 +44,27 @@ body {
   padding: 1.5rem;
 }
 
+/* Heatmap square colors - using !important to override any parent styles */
+.heatmap-square-0 {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.heatmap-square-1 {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+.heatmap-square-2 {
+  background-color: rgba(59, 130, 246, 0.5) !important;
+}
+
+.heatmap-square-3 {
+  background-color: rgba(59, 130, 246, 0.7) !important;
+}
+
+.heatmap-square-4 {
+  background-color: rgb(59, 130, 246) !important;
+}
+
 .button-modern {
   background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -61,3 +82,29 @@ body {
 .button-modern:active {
   transform: translateY(0);
 }
+
+/* Show scrollbar for heatmap */
+.overflow-x-auto {
+  scrollbar-width: thin !important; /* Firefox */
+  -ms-overflow-style: auto !important; /* IE and Edge */
+}
+
+.overflow-x-auto::-webkit-scrollbar {
+  display: block !important; /* Chrome, Safari, Opera */
+  height: 8px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+

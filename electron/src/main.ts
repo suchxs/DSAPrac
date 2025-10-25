@@ -26,7 +26,12 @@ function resolveBackendPath(): string {
 }
 
 // ---------------- Progress Store (userData) ----------------
-type TagProgress = { answered: number; total: number; lastAnsweredAt?: string };
+type TagProgress = { 
+  answered: number; 
+  total: number; 
+  lastAnsweredAt?: string;
+  answeredQuestions?: string[]; // Track individual question IDs
+};
 type ProgressData = {
   version: number;
   theory: Record<string, TagProgress>;
@@ -88,6 +93,7 @@ type CodeFilePayload = {
   content: string;
   isLocked: boolean;
   isAnswerFile: boolean;
+  isHidden: boolean;
   language: 'c' | 'cpp';
 };
 
@@ -515,9 +521,18 @@ function readProgress(): ProgressData {
 }
 
 function writeProgress(progress: ProgressData) {
-  const dir = getUserDataDir();
-  ensureDirExists(dir);
-  fs.writeFileSync(getProgressPath(), JSON.stringify(progress, null, 2), 'utf-8');
+  try {
+    const dir = getUserDataDir();
+    console.log('[Progress] Writing to directory:', dir);
+    ensureDirExists(dir);
+    const filePath = getProgressPath();
+    console.log('[Progress] Writing to file:', filePath);
+    fs.writeFileSync(filePath, JSON.stringify(progress, null, 2), 'utf-8');
+    console.log('[Progress] Write successful, file size:', fs.statSync(filePath).size, 'bytes');
+  } catch (error) {
+    console.error('[Progress] FAILED to write progress:', error);
+    throw error;
+  }
 }
 
 function recordActivity(progress: ProgressData, dateKey?: string) {
@@ -527,6 +542,43 @@ function recordActivity(progress: ProgressData, dateKey?: string) {
   const d = String(now.getDate()).padStart(2, '0');
   const key = dateKey ?? `${y}-${m}-${d}`;
   progress.activity[key] = (progress.activity[key] ?? 0) + 1;
+}
+
+// Sync progress totals with actual question files
+function syncProgressTotals(progress: ProgressData): void {
+  const baseDir = getTheoryBaseDir();
+  if (!fs.existsSync(baseDir)) {
+    return;
+  }
+
+  // Count questions per lesson
+  const lessonCounts: Record<string, number> = {};
+
+  for (const sectionKey of Object.keys(SECTION_DEFINITIONS)) {
+    const sectionDef = SECTION_DEFINITIONS[sectionKey];
+    const sectionDir = path.join(baseDir, slugify(sectionDef.label));
+    if (!fs.existsSync(sectionDir)) continue;
+
+    for (const lessonName of sectionDef.lessons) {
+      const lessonDir = path.join(sectionDir, slugify(lessonName));
+      if (!fs.existsSync(lessonDir)) continue;
+
+      const questionCount = fs
+        .readdirSync(lessonDir)
+        .filter((file) => file.toLowerCase().endsWith('.md')).length;
+
+      lessonCounts[lessonName] = questionCount;
+    }
+  }
+
+  // Update progress totals
+  for (const [lessonName, count] of Object.entries(lessonCounts)) {
+    if (!progress.theory[lessonName]) {
+      progress.theory[lessonName] = { answered: 0, total: count, answeredQuestions: [] };
+    } else {
+      progress.theory[lessonName].total = count;
+    }
+  }
 }
 
 function createWindow() {
@@ -657,17 +709,45 @@ app.whenReady().then(() => {
 
   // Progress IPC
   ipcMain.handle('progress:get', () => {
-    return readProgress();
+    const progress = readProgress();
+    // Sync totals with actual question files
+    syncProgressTotals(progress);
+    writeProgress(progress);
+    return progress;
   });
 
-  ipcMain.handle('progress:updateTheory', (_evt, tag: string, answeredDelta: number) => {
+  ipcMain.handle('progress:updateTheory', (_evt, tag: string, answeredDelta: number | string[]) => {
+    console.log('[Progress] updateTheory called:', { tag, answeredDelta });
     const p = readProgress();
-    const tp = p.theory[tag] ?? { answered: 0, total: 0 };
-    tp.answered = Math.max(0, tp.answered + (answeredDelta || 0));
+    console.log('[Progress] Current progress:', p);
+    const tp = p.theory[tag] ?? { answered: 0, total: 0, answeredQuestions: [] };
+    
+    // If answeredDelta is an array of question IDs, add them to the set
+    if (Array.isArray(answeredDelta)) {
+      const questionIds = new Set(tp.answeredQuestions || []);
+      const before = questionIds.size;
+      answeredDelta.forEach(id => questionIds.add(id));
+      const after = questionIds.size;
+      tp.answeredQuestions = Array.from(questionIds);
+      tp.answered = tp.answeredQuestions.length;
+      console.log('[Progress] Added questions:', { before, after, newQuestions: after - before });
+    } else {
+      // Legacy support: if it's a number, just add to the count
+      tp.answered = Math.max(0, tp.answered + (answeredDelta || 0));
+    }
+    
     tp.lastAnsweredAt = new Date().toISOString().slice(0, 10);
     p.theory[tag] = tp;
-    recordActivity(p);
+    // Note: Activity recording moved to frontend to avoid double-counting
+    // recordActivity(p);
+    console.log('[Progress] After update:', p.theory[tag]);
     writeProgress(p);
+    console.log('[Progress] Progress written to:', getProgressPath());
+    
+    // Broadcast data refresh so UI updates
+    const counts = calculateQuestionCounts(p);
+    broadcastDataRefresh({ counts, progress: p });
+    
     return p;
   });
 

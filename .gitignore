@@ -2,6 +2,13 @@
 rust-backend/target/
 rust-backend/Cargo.lock
 
+# User data and progress tracking
+# NOTE: User progress is stored in OS-specific userData directory (not in repo):
+# - Windows: %APPDATA%\dsaprac\progress.json
+# - macOS: ~/Library/Application Support/dsaprac/progress.json
+# - Linux: ~/.config/dsaprac/progress.json
+# This ensures user data is per-device and never committed to the repository.
+
 # Rust IDE files
 rust-backend/.vscode/
 rust-backend/.idea/
