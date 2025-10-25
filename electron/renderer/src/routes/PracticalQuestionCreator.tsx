@@ -61,10 +61,7 @@ const PracticalQuestionCreator: React.FC = () => {
   const [defaultLanguage, setDefaultLanguage] = useState<'c' | 'cpp' | null>(null);
   const [files, setFiles] = useState<CodeFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string>('');
-  const [testCases, setTestCases] = useState<TestCase[]>([
-    createTestCase(0, false),
-    createTestCase(1, false),
-  ]);
+  const [testCases, setTestCases] = useState<TestCase[]>([]);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -74,7 +71,9 @@ const PracticalQuestionCreator: React.FC = () => {
   const [submitSuccess, setSubmitSuccess] = useState<{ section: string; lesson: string; id: string } | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordInput, setRecordInput] = useState('');
+  const [recordOutput, setRecordOutput] = useState('');
   const [recordError, setRecordError] = useState<string | null>(null);
+  const [isHiddenTest, setIsHiddenTest] = useState(false);
   
   // Modal states
   const [showLanguageModal, setShowLanguageModal] = useState(true);
@@ -181,7 +180,7 @@ const PracticalQuestionCreator: React.FC = () => {
     setTestCases((prev) => prev.filter((tc) => tc.id !== id));
   };
 
-  const handleRecordTestCase = async (isHidden: boolean) => {
+  const handleRecordTestCase = async () => {
     if (files.length === 0) {
       setRecordError('Please add at least one code file before recording a test case.');
       return;
@@ -193,13 +192,9 @@ const PracticalQuestionCreator: React.FC = () => {
       return;
     }
 
-    if (!recordInput.trim()) {
-      setRecordError('Please enter input for the test case.');
-      return;
-    }
-
     setIsRecording(true);
     setRecordError(null);
+    setRecordOutput('');
 
     try {
       const result = await window.api.executeCodeWithInput({
@@ -215,23 +210,49 @@ const PracticalQuestionCreator: React.FC = () => {
 
       if (!result.success) {
         setRecordError(result.error || 'Code execution failed');
+        setRecordOutput('');
+        setIsRecording(false);
         return;
       }
 
-      // Create a new test case with the input and captured output
-      const newTestCase = createTestCase(testCases.length, isHidden);
-      newTestCase.input = recordInput;
-      newTestCase.expectedOutput = result.output || '';
+      // Show the output
+      setRecordOutput(result.output || '');
       
-      setTestCases((prev) => [...prev, newTestCase]);
-      setRecordInput(''); // Clear input after successful recording
-      setRecordError(null);
     } catch (error) {
       console.error('Failed to execute code:', error);
       setRecordError(error instanceof Error ? error.message : 'Failed to execute code');
-    } finally {
+      setRecordOutput('');
       setIsRecording(false);
     }
+  };
+
+  const handleSaveTestCase = () => {
+    if (!recordOutput) {
+      setRecordError('Please run the program first to capture output.');
+      return;
+    }
+
+    // Create a new test case with the input and captured output
+    const newTestCase = createTestCase(testCases.length, isHiddenTest);
+    newTestCase.input = recordInput;
+    newTestCase.expectedOutput = recordOutput;
+    
+    setTestCases((prev) => [...prev, newTestCase]);
+    
+    // Reset recording state
+    setRecordInput('');
+    setRecordOutput('');
+    setIsRecording(false);
+    setRecordError(null);
+    setIsHiddenTest(false);
+  };
+
+  const handleCancelRecording = () => {
+    setRecordInput('');
+    setRecordOutput('');
+    setIsRecording(false);
+    setRecordError(null);
+    setIsHiddenTest(false);
   };
 
   const handleImageButtonClick = () => {
@@ -368,7 +389,7 @@ const PracticalQuestionCreator: React.FC = () => {
     setLesson('');
     setFiles([]);
     setActiveFileId('');
-    setTestCases([createTestCase(0, false), createTestCase(1, false)]);
+    setTestCases([]);
     setSubmitSuccess(null);
     setSubmitError(null);
     navigate('/question-maker');
@@ -779,86 +800,157 @@ const PracticalQuestionCreator: React.FC = () => {
             <div className="mb-6">
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-base font-semibold text-white">Record Test Case</h3>
-                <span className="text-xs text-neutral-500">Execute code to generate test cases</span>
+                <span className="text-xs text-neutral-500">Run code to capture input/output</span>
               </div>
 
-              <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
-                <div className="mb-3">
+              <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-4 space-y-4">
+                {/* Input Area */}
+                <div>
                   <label className="block text-sm font-medium text-neutral-200 mb-2">
-                    Input
+                    Program Input
                   </label>
                   <textarea
                     value={recordInput}
                     onChange={(e) => setRecordInput(e.target.value)}
-                    placeholder="Enter input for the code..."
-                    className="h-24 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 font-mono text-sm text-white outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 resize-none"
+                    placeholder="Enter input data for your program (can be empty for programs with no input)"
+                    className="h-32 w-full rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 font-mono text-sm text-white outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 resize-none"
+                    disabled={isRecording && !!recordOutput}
                   />
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Tip: For programs with scanf/cin, enter values line by line
+                  </p>
                 </div>
 
+                {/* Output Area - Shows after execution */}
+                {recordOutput && (
+                  <div>
+                    <label className="block text-sm font-medium text-neutral-200 mb-2">
+                      Program Output
+                    </label>
+                    <div className="rounded-md border border-green-500/30 bg-green-500/5 px-3 py-2">
+                      <pre className="font-mono text-sm text-green-200 whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
+                        {recordOutput}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+
                 {recordError && (
-                  <div className="mb-3 rounded-md border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+                  <div className="rounded-md border border-rose-500/50 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
                     {recordError}
                   </div>
                 )}
 
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleRecordTestCase(false)}
-                    disabled={isRecording || !recordInput.trim()}
-                    className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {isRecording ? (
-                      <>
-                        <svg
-                          className="h-4 w-4 animate-spin"
-                          xmlns="http://www.w3.org/2000/svg"
-                          fill="none"
-                          viewBox="0 0 24 24"
-                        >
-                          <circle
-                            className="opacity-25"
-                            cx="12"
-                            cy="12"
-                            r="10"
-                            stroke="currentColor"
-                            strokeWidth="4"
-                          ></circle>
-                          <path
-                            className="opacity-75"
-                            fill="currentColor"
-                            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                          ></path>
-                        </svg>
-                        Executing...
-                      </>
+                {/* Action Buttons */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {!recordOutput ? (
+                      <button
+                        type="button"
+                        onClick={handleRecordTestCase}
+                        disabled={isRecording}
+                        className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {isRecording ? (
+                          <>
+                            <svg
+                              className="h-4 w-4 animate-spin"
+                              xmlns="http://www.w3.org/2000/svg"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle
+                                className="opacity-25"
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="4"
+                              ></circle>
+                              <path
+                                className="opacity-75"
+                                fill="currentColor"
+                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                              ></path>
+                            </svg>
+                            Running...
+                          </>
+                        ) : (
+                          <>
+                            <svg
+                              xmlns="http://www.w3.org/2000/svg"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className="h-4 w-4"
+                            >
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            Run Program
+                          </>
+                        )}
+                      </button>
                     ) : (
                       <>
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-4 w-4"
+                        <button
+                          type="button"
+                          onClick={handleSaveTestCase}
+                          className="inline-flex items-center gap-2 rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 cursor-pointer"
                         >
-                          <circle cx="12" cy="12" r="10" />
-                          <polyline points="12 6 12 12 16 14" />
-                        </svg>
-                        Record Visible
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                          >
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          Save Test Case
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelRecording}
+                          className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-800 cursor-pointer"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-4 w-4"
+                          >
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                          Cancel
+                        </button>
                       </>
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleRecordTestCase(true)}
-                    disabled={isRecording || !recordInput.trim()}
-                    className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    {isRecording ? 'Executing...' : 'Record Hidden'}
-                  </button>
+                  </div>
+
+                  {recordOutput && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isHiddenTest}
+                        onChange={(e) => setIsHiddenTest(e.target.checked)}
+                        className="rounded border-neutral-700 bg-neutral-900 text-purple-500 focus:ring-purple-500 focus:ring-offset-neutral-950"
+                      />
+                      <span className="text-xs font-medium text-neutral-400">
+                        Hidden Test Case
+                      </span>
+                    </label>
+                  )}
                 </div>
               </div>
             </div>
@@ -1034,6 +1126,45 @@ const PracticalQuestionCreator: React.FC = () => {
                   renderLineHighlight: 'all',
                   tabSize: 4,
                   insertSpaces: true,
+                  // Enhanced syntax highlighting
+                  suggestOnTriggerCharacters: true,
+                  quickSuggestions: {
+                    other: true,
+                    comments: false,
+                    strings: false,
+                  },
+                  parameterHints: { enabled: false },
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  autoClosingBrackets: 'always',
+                  autoClosingQuotes: 'always',
+                  autoIndent: 'full',
+                  bracketPairColorization: { enabled: true },
+                  guides: {
+                    bracketPairs: false,
+                    indentation: true,
+                  },
+                  renderWhitespace: 'none',
+                  showUnused: true,
+                  wordWrap: 'off',
+                  wrappingIndent: 'indent',
+                  colorDecorators: true,
+                  codeLens: false,
+                  folding: true,
+                  foldingStrategy: 'indentation',
+                  renderControlCharacters: true,
+                  unicodeHighlight: {
+                    ambiguousCharacters: true,
+                    invisibleCharacters: true,
+                  },
+                  // Keep useful highlights
+                  occurrencesHighlight: 'singleFile',
+                  selectionHighlight: true,
+                  renderValidationDecorations: 'on', // Only show error underlines
+                  glyphMargin: false,
+                  lineDecorationsWidth: 0,
+                  lineNumbersMinChars: 3,
+                  overviewRulerLanes: 0,
                 }}
               />
             ) : (
