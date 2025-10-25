@@ -1,4 +1,4 @@
-use dsa_judge::{Judge, JudgeRequest, Problem, TestCase, Difficulty};
+use dsa_judge::{Judge, JudgeRequest, Problem, TestCase, Difficulty, CodeFile};
 use serde_json;
 use std::env;
 use std::io::{self, BufRead, Write};
@@ -81,6 +81,12 @@ enum StdioRequest {
     #[serde(rename = "version")] Version { id: Option<String> },
     #[serde(rename = "env_check")] EnvCheck { id: Option<String> },
     #[serde(rename = "judge")] Judge { id: Option<String>, request: dsa_judge::JudgeRequest },
+    #[serde(rename = "execute")] Execute { 
+        id: Option<String>, 
+        code: Option<String>,
+        language: String,
+        files: Option<Vec<CodeFile>>,
+    },
 }
 
 #[derive(serde::Serialize)]
@@ -138,6 +144,46 @@ async fn run_stdio() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     Err(e) => {
                         let wrap: StdioResponse::<serde_json::Value> = StdioResponse { id, success: false, data: None, error: Some(e.to_string()) };
+                        writeln!(stdout, "{}", serde_json::to_string(&wrap).unwrap())?;
+                    }
+                }
+                stdout.flush()?;
+            }
+            Ok(StdioRequest::Execute { id, code, language, files }) => {
+                // Prepare files for compilation
+                let compile_files = if let Some(fs) = files {
+                    fs
+                } else if let Some(c) = code {
+                    // Single file mode
+                    let filename = if language == "cpp" { "main.cpp" } else { "main.c" };
+                    vec![CodeFile { filename: filename.to_string(), content: c }]
+                } else {
+                    // Error: need either files or code
+                    let wrap: StdioResponse::<serde_json::Value> = StdioResponse { 
+                        id, 
+                        success: false, 
+                        data: None, 
+                        error: Some("Either 'code' or 'files' must be provided".to_string()) 
+                    };
+                    writeln!(stdout, "{}", serde_json::to_string(&wrap).unwrap())?;
+                    stdout.flush()?;
+                    continue;
+                };
+                
+                let compile_result = dsa_judge::interactive::compile_files(compile_files, &language).await;
+                
+                match compile_result {
+                    Ok(result) => {
+                        let wrap = StdioResponse { id, success: true, data: Some(result), error: None };
+                        writeln!(stdout, "{}", serde_json::to_string(&wrap).unwrap())?;
+                    }
+                    Err(e) => {
+                        let wrap: StdioResponse::<serde_json::Value> = StdioResponse { 
+                            id, 
+                            success: false, 
+                            data: None, 
+                            error: Some(e.to_string()) 
+                        };
                         writeln!(stdout, "{}", serde_json::to_string(&wrap).unwrap())?;
                     }
                 }

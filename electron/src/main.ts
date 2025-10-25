@@ -79,6 +79,8 @@ type TestCasePayload = {
   input: string;
   expectedOutput: string;
   isHidden: boolean;
+  executionTime?: number;
+  memoryUsage?: number;
 };
 
 type CodeFilePayload = {
@@ -576,6 +578,18 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
+
+  // F12 to toggle DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      if (mainWindow && mainWindow.webContents.isDevToolsOpened()) {
+        mainWindow.webContents.closeDevTools();
+      } else if (mainWindow) {
+        mainWindow.webContents.openDevTools();
+      }
+      event.preventDefault();
+    }
+  });
 }
 
 // Single-window navigation - no longer needed with React Router
@@ -1228,6 +1242,8 @@ app.whenReady().then(() => {
         input,
         expected_output: expectedOutput,
         is_hidden: !!tc.isHidden,
+        execution_time: tc.executionTime,
+        memory_usage: tc.memoryUsage,
       };
     });
 
@@ -1360,6 +1376,8 @@ app.whenReady().then(() => {
                   input: typeof tc.input === 'string' ? tc.input : '',
                   expectedOutput: typeof tc.expected_output === 'string' ? tc.expected_output : '',
                   isHidden: !!tc.is_hidden,
+                  executionTime: typeof tc.execution_time === 'number' ? tc.execution_time : undefined,
+                  memoryUsage: typeof tc.memory_usage === 'number' ? tc.memory_usage : undefined,
                 }))
               : [];
 
@@ -1473,6 +1491,8 @@ app.whenReady().then(() => {
         input,
         expected_output: expectedOutput,
         is_hidden: !!tc.isHidden,
+        execution_time: tc.executionTime,
+        memory_usage: tc.memoryUsage,
       };
     });
 
@@ -1619,8 +1639,14 @@ app.whenReady().then(() => {
 
       // Compile the code
       const compiler = language === 'cpp' ? 'g++' : 'gcc';
+      
+      // Only compile source files (.c, .cpp), not headers (.h, .hpp)
+      const sourceFiles = files
+        .filter(f => !f.filename.match(/\.(h|hpp)$/i))
+        .map(f => f.filename);
+      
       const compileArgs = [
-        ...files.map(f => f.filename),
+        ...sourceFiles,
         '-o',
         executableName,
       ];
@@ -1727,6 +1753,297 @@ app.whenReady().then(() => {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
       };
+    }
+  });
+
+  // ============ Streaming Terminal Execution Handlers ============
+  // Store active terminal sessions
+  const terminalSessions = new Map<string, {
+    process: ReturnType<typeof spawn>;
+    tempDir: string;
+    startTime?: number;
+    memoryMonitor?: NodeJS.Timeout;
+    peakMemoryKB?: number;
+  }>();
+
+  ipcMain.handle('terminal:start', async (_event, rawPayload: any): Promise<any> => {
+    const payload = rawPayload as { files: CodeFilePayload[] };
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid payload received.');
+    }
+
+    const { files } = payload;
+
+    if (!Array.isArray(files) || files.length === 0) {
+      return { success: false, error: 'At least one code file is required to execute.' };
+    }
+
+    try {
+      // Determine the language first (assume all files use the same language)
+      const language = files[0].language;
+      
+      // Prepare files for Rust backend, injecting unbuffering code
+      const preparedFiles = files.map(file => {
+        let content = file.content;
+        
+        // Inject unbuffering code into files with main function
+        if (file.filename.toLowerCase().includes('main') || files.length === 1) {
+          console.log('[Terminal] Injecting unbuffer code into', file.filename);
+          // For C/C++ files, inject setvbuf calls at the start of main
+          content = content.replace(
+            /int\s+main\s*\([^)]*\)\s*\{/,
+            (match) => {
+              const unbufferCode = language === 'c' 
+                ? '\n    setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); setvbuf(stdin, NULL, _IONBF, 0);'
+                : '\n    std::setvbuf(stdout, NULL, _IONBF, 0); std::setvbuf(stderr, NULL, _IONBF, 0); std::setvbuf(stdin, NULL, _IONBF, 0);';
+              return match + unbufferCode;
+            }
+          );
+        }
+        
+        return {
+          filename: file.filename,
+          content: content,
+        };
+      });
+
+      // Use Rust backend for compilation
+      console.log('[Terminal] Compiling with Rust backend...');
+      console.log('[Terminal] Files to compile:', preparedFiles.map(f => f.filename).join(', '));
+      
+      interface CompileResult {
+        success: boolean;
+        executable_path?: string;
+        error?: string;
+        compile_time_ms: number;
+      }
+      
+      const compileStart = Date.now();
+      const compileResult = await sendBackendCommand<CompileResult>('execute', {
+        language: language === 'cpp' ? 'cpp' : 'c',
+        files: preparedFiles,
+      }, 30000); // 30 second timeout
+      
+      console.log('[Terminal] Compilation took:', Date.now() - compileStart, 'ms');
+      console.log('[Terminal] Compile result:', compileResult);
+
+      if (!compileResult.success || !compileResult.executable_path) {
+        return {
+          success: false,
+          error: compileResult.error || 'Compilation failed',
+        };
+      }
+
+      const executablePath = compileResult.executable_path;
+      console.log('[Terminal] Compilation successful:', executablePath);
+      
+      // Note: temp directory is managed by Rust backend now
+      const tempDir = path.dirname(executablePath);
+
+      // Execute the compiled program with streaming I/O
+      const sessionId = crypto.randomBytes(16).toString('hex');
+      
+      console.log('[Terminal] Starting program:', executablePath);
+      
+      // Track execution time and memory
+      const startTime = Date.now();
+      let peakMemoryKB = 0;
+      
+      // Execute directly without cmd wrapper for better performance
+      const executeProcess = spawn(executablePath, [], { 
+        cwd: tempDir,
+        stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
+        env: {
+          ...process.env,
+          _NO_DEBUG_HEAP: '1',
+        },
+      });
+
+      console.log('[Terminal] Process spawned, PID:', executeProcess.pid);
+      
+      // Store the session with metrics first
+      const session = { 
+        process: executeProcess, 
+        tempDir,
+        startTime,
+        memoryMonitor: undefined as NodeJS.Timeout | undefined,
+        peakMemoryKB: 0,
+      };
+      terminalSessions.set(sessionId, session);
+      
+      // Monitor memory usage periodically
+      const isWindows = process.platform === 'win32';
+      const memoryMonitor = setInterval(() => {
+        if (executeProcess.pid && session) {
+          try {
+            // On Windows, use tasklist to get memory
+            if (isWindows) {
+              const { execSync } = require('child_process');
+              const output = execSync(`tasklist /FI "PID eq ${executeProcess.pid}" /FO CSV /NH`, { encoding: 'utf8' });
+              const match = output.match(/"([0-9,]+) K"/);
+              if (match) {
+                const memKB = parseInt(match[1].replace(/,/g, ''));
+                session.peakMemoryKB = Math.max(session.peakMemoryKB || 0, memKB);
+              }
+            }
+          } catch (e) {
+            // Ignore errors in memory monitoring
+          }
+        }
+      }, 50); // Check every 50ms
+      
+      session.memoryMonitor = memoryMonitor;
+
+      // Set encoding
+      if (executeProcess.stdout) {
+        executeProcess.stdout.setEncoding('utf8');
+      }
+      if (executeProcess.stderr) {
+        executeProcess.stderr.setEncoding('utf8');
+      }
+      if (executeProcess.stdin) {
+        executeProcess.stdin.setDefaultEncoding('utf8');
+      }
+
+      // Stream stdout to renderer
+      executeProcess.stdout.on('data', (data) => {
+        console.log('[Terminal] stdout data:', JSON.stringify(data.toString()));
+        if (mainWindow) {
+          mainWindow.webContents.send('terminal:data', {
+            sessionId,
+            data: data.toString(),
+          });
+        }
+      });
+
+      // Stream stderr to renderer
+      executeProcess.stderr.on('data', (data) => {
+        console.log('[Terminal] stderr data:', JSON.stringify(data.toString()));
+        if (mainWindow) {
+          mainWindow.webContents.send('terminal:data', {
+            sessionId,
+            error: data.toString(),
+          });
+        }
+      });
+
+      // Handle process exit
+      executeProcess.on('close', (code) => {
+        const currentSession = terminalSessions.get(sessionId);
+        
+        // Calculate execution time
+        const executionTime = Date.now() - startTime;
+        
+        // Clear memory monitor
+        if (currentSession?.memoryMonitor) {
+          clearInterval(currentSession.memoryMonitor);
+        }
+        
+        if (mainWindow) {
+          mainWindow.webContents.send('terminal:data', {
+            sessionId,
+            exit: true,
+            exitCode: code || 0,
+            executionTime, // in milliseconds
+            memoryUsage: currentSession?.peakMemoryKB || 0, // in KB
+          });
+        }
+
+        // Clean up session and temp directory
+        terminalSessions.delete(sessionId);
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+      });
+
+      // Handle process error
+      executeProcess.on('error', (err) => {
+        if (mainWindow) {
+          mainWindow.webContents.send('terminal:data', {
+            sessionId,
+            error: `Execution error: ${err.message}`,
+            exit: true,
+            exitCode: 1,
+          });
+        }
+
+        // Clean up session and temp directory
+        terminalSessions.delete(sessionId);
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+      });
+
+      // Timeout after 60 seconds (increased for interactive programs)
+      setTimeout(() => {
+        const session = terminalSessions.get(sessionId);
+        if (session) {
+          session.process.kill();
+          terminalSessions.delete(sessionId);
+          if (mainWindow) {
+            mainWindow.webContents.send('terminal:data', {
+              sessionId,
+              error: '\r\n\r\nExecution timeout (60 seconds)',
+              exit: true,
+              exitCode: 124,
+            });
+          }
+          // Clean up temp directory
+          try {
+            fs.rmSync(tempDir, { recursive: true, force: true });
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+      }, 60000);
+
+      return {
+        success: true,
+        sessionId,
+      };
+    } catch (error) {
+      // Note: Rust backend manages temp directory cleanup
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  });
+
+  // Handle writing to terminal stdin
+  ipcMain.handle('terminal:write', async (_event, sessionId: string, data: string): Promise<void> => {
+    const session = terminalSessions.get(sessionId);
+    console.log('[Terminal] Write request:', { sessionId, data: JSON.stringify(data), hasSession: !!session });
+    if (session && session.process.stdin && session.process.stdin.writable) {
+      console.log('[Terminal] Writing to stdin:', data.length, 'bytes');
+      session.process.stdin.write(data);
+    } else {
+      console.log('[Terminal] Cannot write - session or stdin not available');
+    }
+  });
+
+  // Handle stopping terminal execution
+  ipcMain.handle('terminal:stop', async (_event, sessionId: string): Promise<void> => {
+    const session = terminalSessions.get(sessionId);
+    if (session) {
+      // Clear memory monitor
+      if (session.memoryMonitor) {
+        clearInterval(session.memoryMonitor);
+      }
+      
+      session.process.kill();
+      terminalSessions.delete(sessionId);
+      // Clean up temp directory
+      try {
+        fs.rmSync(session.tempDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   });
 

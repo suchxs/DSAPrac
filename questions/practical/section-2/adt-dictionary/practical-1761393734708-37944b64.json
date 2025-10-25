@@ -1,0 +1,58 @@
+{
+  "id": "practical-1761393734708-37944b64",
+  "title": "asdqawd",
+  "description": "qweqrwgvwegvber",
+  "difficulty": "Medium",
+  "section": "Section 2",
+  "lesson": "ADT Dictionary",
+  "files": [
+    {
+      "filename": "main.c",
+      "content": "#include <stdio.h>\n#include \"sum.h\"\nint main() {\n    int a, b;\n    printf(\"First: \");\n    fflush(stdout);\n    scanf(\"%d\", &a);\n    printf(\"Second: \");\n    fflush(stdout);\n    scanf(\"%d\", &b);\n    printf(\"Sumwow!: %d\", addSum(a, b));\n    return 0;\n}",
+      "is_locked": false,
+      "is_answer_file": false,
+      "language": "c"
+    },
+    {
+      "filename": "sum.c",
+      "content": "#include \"sum.h\"\n\n\nint addSum(int a, int b){\n\n\n    return a + b;\n}",
+      "is_locked": false,
+      "is_answer_file": true,
+      "language": "c"
+    },
+    {
+      "filename": "sum.h",
+      "content": "#ifndef SUM_H\n#define SUM_H\n\n// Your header declarations here\n#include <stdio.h>\nint addSum(int a, int b);\n#endif // SUM_H\n",
+      "is_locked": false,
+      "is_answer_file": false,
+      "language": "c"
+    }
+  ],
+  "test_cases": [
+    {
+      "input": "15\n12",
+      "expected_output": "First: 15\r\nSecond: 12\r\nSumwow!: 27",
+      "is_hidden": false
+    },
+    {
+      "input": "23\n75",
+      "expected_output": "First: 23\r\nSecond: 75\r\nSumwow!: 98",
+      "is_hidden": false
+    },
+    {
+      "input": "99\n86",
+      "expected_output": "First: 99\r\nSecond: 86\r\nSumwow!: 185",
+      "is_hidden": false
+    },
+    {
+      "input": "15\n17",
+      "expected_output": "First: qw15\r\nSecond: 17\r\nSumwow!: 32",
+      "is_hidden": false,
+      "execution_time": 4896,
+      "memory_usage": 5948
+    }
+  ],
+  "image": "practical-1761393734708-37944b64.png",
+  "created_at": "2025-10-25T12:02:14.707Z",
+  "updated_at": "2025-10-25T13:14:40.584Z"
+}

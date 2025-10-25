@@ -82,8 +82,8 @@ const QuestionMaker: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid flex-1 grid-cols-1 gap-6 lg:grid-cols-2">
-          <GlassCard className="flex flex-col justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 p-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <GlassCard className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/60 p-8">
             <div>
               <h2 className="text-2xl font-semibold text-white">Theoretical Questions</h2>
               <p className="mt-2 text-sm text-neutral-400">
@@ -125,9 +125,9 @@ const QuestionMaker: React.FC = () => {
             </button>
           </GlassCard>
 
-          <GlassCard className="flex flex-col justify-between rounded-xl border border-neutral-800 bg-neutral-900/60 p-8">
+          <GlassCard className="flex flex-col rounded-xl border border-neutral-800 bg-neutral-900/60 p-8">
             <div>
-              <h2 className="text-2xl font-semibold text-white">Practical Problems</h2>
+              <h2 className="text-2xl font-semibold text-white">Practical Questions</h2>
               <p className="mt-2 text-sm text-neutral-400">
                 Create Codechum boilerplate questions
               </p>
@@ -141,7 +141,7 @@ const QuestionMaker: React.FC = () => {
                   onClick={handleViewAllPractical}
                   className="inline-flex w-full items-center justify-center rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
                 >
-                  View All Problems
+                  View All Questions
                 </button>
               </div>
             </div>
@@ -163,7 +163,7 @@ const QuestionMaker: React.FC = () => {
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              Create Practical Problem
+              Create Practical Question
             </button>
           </GlassCard>
         </div>

@@ -439,9 +439,9 @@ const TheoreticalQuestionLibrary: React.FC = () => {
   const handleCloseFeedback = () => setFeedback(null);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-50">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-12">
-        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="h-screen bg-neutral-950 text-neutral-50 overflow-hidden">
+      <div className="mx-auto flex h-full w-full max-w-6xl flex-col px-6 py-12">
+        <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between shrink-0">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Theory Question Library</h1>
             <p className="mt-1 text-sm text-neutral-400">
@@ -478,7 +478,8 @@ const TheoreticalQuestionLibrary: React.FC = () => {
             </div>
           </div>
         ) : (
-          <div className="flex-1 space-y-10 overflow-y-auto pr-2">
+          <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-track-neutral-900 scrollbar-thumb-neutral-700 hover:scrollbar-thumb-neutral-600">
+            <div className="space-y-10">
             {groupedQuestions.map((section) => (
               <div key={section.sectionKey} className="space-y-6">
                 <div>
@@ -486,7 +487,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                   <div className="mt-1 h-0.5 w-16 bg-neutral-700" />
                 </div>
                 {section.lessons.map((lesson) => (
-                  <div key={`${section.sectionKey}-${lesson.lesson}`} className="space-y-4">
+                  <div key={`${section.sectionKey}-${lesson.lesson}`} className="space-y-4 mt-8">
                     <div className="flex items-center justify-between">
                       <h3 className="text-lg font-medium text-neutral-200">{lesson.lesson}</h3>
                       <span className="text-xs uppercase tracking-wide text-neutral-500">
@@ -596,6 +597,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                 ))}
               </div>
             ))}
+            </div>
           </div>
         )}
       </div>

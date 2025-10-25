@@ -144,6 +144,43 @@ export interface ExecuteCodeResult {
   executionTime?: number;
 }
 
+export interface StartTerminalExecutionPayload {
+  files: CodeFilePayload[];
+}
+
+export interface StartTerminalExecutionResult {
+  success: boolean;
+  sessionId?: string;
+  error?: string;
+}
+
+export interface TerminalDataPayload {
+  sessionId: string;
+  data?: string;
+  error?: string;
+  exit?: boolean;
+  exitCode?: number;
+}
+
+export interface NormalizationOptions {
+  normalize_crlf: boolean;
+  ignore_extra_whitespace: boolean;
+}
+
+export interface JudgeRequest {
+  code: string;
+  problem: any;
+  language: string;
+  normalization?: NormalizationOptions;
+}
+
+export interface JudgeResponse {
+  success: boolean;
+  result?: any;
+  error?: string;
+  status: string;
+}
+
 export interface ElectronAPI {
   openMenu: () => void;
   openPractice: () => void;
@@ -165,6 +202,12 @@ export interface ElectronAPI {
   updatePracticalQuestion: (payload: UpdatePracticalQuestionPayload) => Promise<QuestionCounts>;
   deletePracticalQuestion: (payload: DeletePracticalQuestionPayload) => Promise<QuestionCounts>;
   executeCodeWithInput: (payload: ExecuteCodePayload) => Promise<ExecuteCodeResult>;
+  runJudge: (request: JudgeRequest) => Promise<JudgeResponse>;
+  // Streaming terminal APIs
+  startTerminalExecution: (payload: StartTerminalExecutionPayload) => Promise<StartTerminalExecutionResult>;
+  writeToTerminal: (sessionId: string, data: string) => Promise<void>;
+  stopTerminalExecution: (sessionId: string) => Promise<void>;
+  onTerminalData: (callback: (data: TerminalDataPayload) => void) => () => void;
   onNavigate: (callback: (route: string) => void) => void;
   onDataRefresh: (callback: (data: DataRefreshPayload) => void) => () => void;
   // Window controls
@@ -205,6 +248,23 @@ const api: ElectronAPI = {
     ipcRenderer.invoke('practical:deleteQuestion', payload),
   executeCodeWithInput: (payload) =>
     ipcRenderer.invoke('practical:executeCode', payload),
+  runJudge: (request) =>
+    ipcRenderer.invoke('judge:run', request),
+  // Streaming terminal APIs
+  startTerminalExecution: (payload) =>
+    ipcRenderer.invoke('terminal:start', payload),
+  writeToTerminal: (sessionId, data) =>
+    ipcRenderer.invoke('terminal:write', sessionId, data),
+  stopTerminalExecution: (sessionId) =>
+    ipcRenderer.invoke('terminal:stop', sessionId),
+  onTerminalData: (callback: (data: TerminalDataPayload) => void) => {
+    const listener = (_event: IpcRendererEvent, data: TerminalDataPayload) => {
+      console.log('[Preload] terminal:data event received:', data);
+      callback(data);
+    };
+    ipcRenderer.on('terminal:data', listener);
+    return () => ipcRenderer.removeListener('terminal:data', listener);
+  },
   onNavigate: (callback: (route: string) => void) => {
     ipcRenderer.on('navigate', (_event, route) => callback(route));
   },
