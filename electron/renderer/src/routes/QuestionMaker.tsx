@@ -53,8 +53,11 @@ const QuestionMaker: React.FC = () => {
   };
 
   const handleCreatePractical = () => {
-    console.log('Creating practical question');
-    alert('Practical Question Creator - Coming Soon!\n\nThis will open a form to create coding problems with test cases.');
+    navigate('/question-maker/practical');
+  };
+
+  const handleViewAllPractical = () => {
+    navigate('/question-maker/practical/library');
   };
 
   const handleBack = () => {
@@ -129,15 +132,23 @@ const QuestionMaker: React.FC = () => {
                 Create Codechum boilerplate questions
               </p>
 
-              <div className="mt-6 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
-                <span className="text-xs uppercase tracking-wide text-neutral-500">Total Problems</span>
-                <span className="text-3xl font-bold text-white">{counts.practical}</span>
+              <div className="mt-6 space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
+                  <span className="text-xs uppercase tracking-wide text-neutral-500">Total Problems</span>
+                  <span className="text-3xl font-bold text-white">{counts.practical}</span>
+                </div>
+                <button
+                  onClick={handleViewAllPractical}
+                  className="inline-flex w-full items-center justify-center rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+                >
+                  View All Problems
+                </button>
               </div>
             </div>
 
             <button
               onClick={handleCreatePractical}
-              className="mt-8 inline-flex items-center justify-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-4 py-3 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+              className="mt-8 inline-flex items-center justify-center gap-2 rounded-md border border-neutral-700 bg-white px-4 py-3 text-sm font-medium text-black transition hover:bg-neutral-200 cursor-pointer"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -152,7 +163,7 @@ const QuestionMaker: React.FC = () => {
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              Practical Creator Coming Soon
+              Create Practical Problem
             </button>
           </GlassCard>
         </div>
