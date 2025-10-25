@@ -210,6 +210,13 @@ export interface ElectronAPI {
   onTerminalData: (callback: (data: TerminalDataPayload) => void) => () => void;
   onNavigate: (callback: (route: string) => void) => void;
   onDataRefresh: (callback: (data: DataRefreshPayload) => void) => () => void;
+  // Practical Problem Solver
+  openPracticalProblem: (questionId: string) => void;
+  getCurrentPracticalQuestion: () => Promise<any>;
+  savePracticalProgress: (payload: any) => Promise<void>;
+  runPracticalCode: (payload: any) => Promise<any>;
+  submitPracticalSolution: (payload: any) => Promise<any>;
+  recordPracticalActivity: (payload: any) => Promise<void>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -275,6 +282,13 @@ const api: ElectronAPI = {
     ipcRenderer.on('data:refresh', listener);
     return () => ipcRenderer.removeListener('data:refresh', listener);
   },
+  // Practical Problem Solver
+  openPracticalProblem: (questionId: string) => ipcRenderer.send('open-practical-problem', questionId),
+  getCurrentPracticalQuestion: () => ipcRenderer.invoke('get-current-practical-question'),
+  savePracticalProgress: (payload) => ipcRenderer.invoke('save-practical-progress', payload),
+  runPracticalCode: (payload) => ipcRenderer.invoke('run-practical-code', payload),
+  submitPracticalSolution: (payload) => ipcRenderer.invoke('submit-practical-solution', payload),
+  recordPracticalActivity: (payload) => ipcRenderer.invoke('record-practical-activity', payload),
   // Window controls
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),

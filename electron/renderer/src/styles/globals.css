@@ -20,14 +20,35 @@ body {
   overflow: hidden; /* Hide scrollbar */
 }
 
-/* Hide scrollbar for all elements */
+/* Custom scrollbar styling */
 * {
-  scrollbar-width: none; /* Firefox */
+  scrollbar-width: thin; /* Firefox - thin scrollbar */
+  scrollbar-color: rgba(255, 255, 255, 0.1) transparent; /* Firefox - thumb and track */
   -ms-overflow-style: none; /* IE and Edge */
 }
 
+/* Webkit browsers (Chrome, Safari, Edge) */
 *::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Smooth scrolling for all scrollable elements */
+* {
+  scroll-behavior: smooth;
 }
 
 .natural-bg {
@@ -105,6 +126,15 @@ body {
 }
 
 .overflow-x-auto::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* Window drag regions */
+.drag-region {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
 }
 

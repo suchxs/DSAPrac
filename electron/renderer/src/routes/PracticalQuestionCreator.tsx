@@ -198,7 +198,27 @@ const PracticalQuestionCreator: React.FC = () => {
 
   const handleFileChange = (id: string, field: keyof CodeFile, value: string | boolean) => {
     setFiles((prev) =>
-      prev.map((file) => (file.id === id ? { ...file, [field]: value } : file))
+      prev.map((file) => {
+        if (file.id !== id) return file;
+        
+        // Create updated file with the new value
+        let updatedFile = { ...file, [field]: value };
+        
+        // Enforce mutual exclusivity rules
+        if (field === 'isLocked' && value === true) {
+          // If setting as locked, cannot be answer file
+          updatedFile.isAnswerFile = false;
+        } else if (field === 'isHidden' && value === true) {
+          // If setting as hidden, cannot be answer file
+          updatedFile.isAnswerFile = false;
+        } else if (field === 'isAnswerFile' && value === true) {
+          // If setting as answer file, cannot be locked or hidden
+          updatedFile.isLocked = false;
+          updatedFile.isHidden = false;
+        }
+        
+        return updatedFile;
+      })
     );
   };
 
@@ -1523,9 +1543,10 @@ const PracticalQuestionCreator: React.FC = () => {
                     type="checkbox"
                     checked={activeFile.isAnswerFile}
                     onChange={(e) => handleFileChange(activeFile.id, 'isAnswerFile', e.target.checked)}
-                    className="rounded border-neutral-700 bg-neutral-900 text-green-500 focus:ring-green-500 focus:ring-offset-neutral-950"
+                    disabled={activeFile.isLocked || activeFile.isHidden}
+                    className="rounded border-neutral-700 bg-neutral-900 text-green-500 focus:ring-green-500 focus:ring-offset-neutral-950 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
-                  <span className="text-xs font-medium text-neutral-400">
+                  <span className={`text-xs font-medium ${activeFile.isLocked || activeFile.isHidden ? 'text-neutral-600' : 'text-neutral-400'}`}>
                     Answer File (cleared in exam)
                   </span>
                 </label>
@@ -1534,9 +1555,10 @@ const PracticalQuestionCreator: React.FC = () => {
                     type="checkbox"
                     checked={activeFile.isLocked}
                     onChange={(e) => handleFileChange(activeFile.id, 'isLocked', e.target.checked)}
-                    className="rounded border-neutral-700 bg-neutral-900 text-amber-500 focus:ring-amber-500 focus:ring-offset-neutral-950"
+                    disabled={activeFile.isAnswerFile}
+                    className="rounded border-neutral-700 bg-neutral-900 text-amber-500 focus:ring-amber-500 focus:ring-offset-neutral-950 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
-                  <span className="text-xs font-medium text-neutral-400">
+                  <span className={`text-xs font-medium ${activeFile.isAnswerFile ? 'text-neutral-600' : 'text-neutral-400'}`}>
                     Lock file (read-only)
                   </span>
                 </label>
@@ -1545,9 +1567,10 @@ const PracticalQuestionCreator: React.FC = () => {
                     type="checkbox"
                     checked={activeFile.isHidden}
                     onChange={(e) => handleFileChange(activeFile.id, 'isHidden', e.target.checked)}
-                    className="rounded border-neutral-700 bg-neutral-900 text-purple-500 focus:ring-purple-500 focus:ring-offset-neutral-950"
+                    disabled={activeFile.isAnswerFile}
+                    className="rounded border-neutral-700 bg-neutral-900 text-purple-500 focus:ring-purple-500 focus:ring-offset-neutral-950 disabled:opacity-50 disabled:cursor-not-allowed"
                   />
-                  <span className="text-xs font-medium text-neutral-400">
+                  <span className={`text-xs font-medium ${activeFile.isAnswerFile ? 'text-neutral-600' : 'text-neutral-400'}`}>
                     Hidden file (not shown to students)
                   </span>
                 </label>
