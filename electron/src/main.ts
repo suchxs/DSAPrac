@@ -6,6 +6,14 @@ import crypto from 'node:crypto';
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ReturnType<typeof spawn> | null = null;
+type PendingBackendRequest = {
+  resolve: (value: any) => void;
+  reject: (error: Error) => void;
+  timeout: NodeJS.Timeout;
+};
+const pendingBackendRequests = new Map<string, PendingBackendRequest>();
+let backendStdoutBuffer = '';
+let backendRequestCounter = 0;
 
 function resolveBackendPath(): string {
   const override = process.env.DSA_JUDGE_PATH;
@@ -65,6 +73,77 @@ type UpdateTheoreticalQuestionPayload = {
 type DeleteTheoreticalQuestionPayload = {
   id: string;
   filePath: string;
+};
+
+type TestCasePayload = {
+  input: string;
+  expectedOutput: string;
+  isHidden: boolean;
+};
+
+type CodeFilePayload = {
+  filename: string;
+  content: string;
+  isLocked: boolean;
+  isAnswerFile: boolean;
+  language: 'c' | 'cpp';
+};
+
+type CreatePracticalQuestionPayload = {
+  title: string;
+  description: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  section: string;
+  lesson: string;
+  files: CodeFilePayload[];
+  testCases: TestCasePayload[];
+  image?: ImagePayload | null;
+};
+
+type PracticalQuestionRecord = {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  sectionKey: string;
+  section: string;
+  lesson: string;
+  filePath: string;
+  files: CodeFilePayload[];
+  testCases: TestCasePayload[];
+  imageDataUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type UpdatePracticalQuestionPayload = {
+  id: string;
+  filePath: string;
+  title: string;
+  description: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  sectionKey: string;
+  lesson: string;
+  files: CodeFilePayload[];
+  testCases: TestCasePayload[];
+  image?: ImagePayload | null;
+};
+
+type DeletePracticalQuestionPayload = {
+  id: string;
+  filePath: string;
+};
+
+type ExecuteCodePayload = {
+  files: CodeFilePayload[];
+  input: string;
+};
+
+type ExecuteCodeResult = {
+  success: boolean;
+  output?: string;
+  error?: string;
+  executionTime?: number;
 };
 
 const SECTION_DEFINITIONS: Record<string, { label: string; lessons: string[] }> = {
@@ -132,6 +211,99 @@ function getTheoryBaseDir(): string {
   return path.join(getQuestionsRootDir(), 'theory');
 }
 
+function getPracticalBaseDir(): string {
+  return path.join(getQuestionsRootDir(), 'practical');
+}
+
+function countPracticalQuestions(): number {
+  const baseDir = getPracticalBaseDir();
+  if (!fs.existsSync(baseDir)) return 0;
+
+  const stack: string[] = [baseDir];
+  let total = 0;
+
+  while (stack.length) {
+    const current = stack.pop()!;
+    const entries = fs.readdirSync(current, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(fullPath);
+      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.json')) {
+        total += 1;
+      }
+    }
+  }
+
+  return total;
+}
+
+function handleBackendLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) return;
+  try {
+    const parsed = JSON.parse(trimmed);
+    const id = parsed.id;
+    if (!id) {
+      console.warn('Judge backend response missing id:', parsed);
+      return;
+    }
+    const pending = pendingBackendRequests.get(id);
+    if (!pending) {
+      console.warn('No pending backend request for id', id);
+      return;
+    }
+    clearTimeout(pending.timeout);
+    pendingBackendRequests.delete(id);
+    if (parsed.success) {
+      pending.resolve(parsed.data ?? null);
+    } else {
+      pending.reject(new Error(parsed.error ?? 'Judge backend error'));
+    }
+  } catch (error) {
+    console.error('Failed to parse judge backend output:', trimmed, error);
+  }
+}
+
+function rejectAllPendingBackendRequests(error: Error) {
+  for (const [id, pending] of pendingBackendRequests.entries()) {
+    clearTimeout(pending.timeout);
+    pending.reject(error);
+    pendingBackendRequests.delete(id);
+  }
+}
+
+function sendBackendCommand<T>(
+  action: string,
+  payload: Record<string, unknown> = {},
+  timeoutMs = 60000
+): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (!backendProcess || !backendProcess.stdin || backendProcess.killed) {
+      reject(new Error('Judge backend is not running.'));
+      return;
+    }
+
+    const id = `req-${Date.now()}-${++backendRequestCounter}`;
+    const envelope = { action, id, ...payload };
+    const timeout = setTimeout(() => {
+      pendingBackendRequests.delete(id);
+      reject(new Error(`Judge backend request timed out for action "${action}"`));
+    }, timeoutMs);
+
+    pendingBackendRequests.set(id, { resolve, reject, timeout });
+
+    const serialized = JSON.stringify(envelope);
+    backendProcess.stdin.write(serialized + '\n', (err) => {
+      if (err) {
+        clearTimeout(timeout);
+        pendingBackendRequests.delete(id);
+        reject(err);
+      }
+    });
+  });
+}
+
 function isPathInside(basePath: string, targetPath: string): boolean {
   const normalizedBase = path.resolve(basePath);
   const normalizedTarget = path.resolve(targetPath);
@@ -147,7 +319,7 @@ function calculateQuestionCounts(progress: ProgressData): QuestionCounts {
     (sum, tagData) => sum + (tagData.total ?? 0),
     0
   );
-  const practical = Object.keys(progress.practical).length;
+  const practical = countPracticalQuestions();
   return { theoretical, practical };
 }
 
@@ -425,14 +597,27 @@ function startBackend() {
     dialog.showErrorBox('DSA Judge not found', message);
     return;
   }
-  backendProcess = spawn(exePath);
-  backendProcess.stdout?.on('data', (data) => console.log(`[backend] ${String(data).trim()}`));
+  backendStdoutBuffer = '';
+  backendProcess = spawn(exePath, ['--stdio']);
+  backendProcess.stdout?.on('data', (data) => {
+    backendStdoutBuffer += data.toString();
+    let newlineIndex: number;
+    while ((newlineIndex = backendStdoutBuffer.indexOf('\n')) >= 0) {
+      const line = backendStdoutBuffer.slice(0, newlineIndex);
+      backendStdoutBuffer = backendStdoutBuffer.slice(newlineIndex + 1);
+      handleBackendLine(line);
+    }
+  });
   backendProcess.stderr?.on('data', (data) => console.error(`[backend:err] ${String(data).trim()}`));
   backendProcess.on('error', (err) => {
     console.error('[backend] spawn error:', err);
+    rejectAllPendingBackendRequests(err instanceof Error ? err : new Error(String(err)));
     dialog.showErrorBox('Backend error', String(err));
   });
-  backendProcess.on('close', (code) => console.log(`[backend] exited with code ${code}`));
+  backendProcess.on('close', (code) => {
+    console.log(`[backend] exited with code ${code}`);
+    rejectAllPendingBackendRequests(new Error('Judge backend closed.'));
+  });
 }
 
 app.whenReady().then(() => {
@@ -495,6 +680,18 @@ app.whenReady().then(() => {
     return calculateQuestionCounts(progress);
   });
 
+  ipcMain.handle('judge:envCheck', async () => {
+    await sendBackendCommand('env_check');
+    return { success: true };
+  });
+
+  ipcMain.handle('judge:run', async (_event, request) => {
+    if (!request || typeof request !== 'object') {
+      throw new Error('Invalid judge request.');
+    }
+    return sendBackendCommand('judge', { request });
+  });
+
   ipcMain.handle('theory:createQuestion', (_event, rawPayload: CreateTheoreticalQuestionPayload) => {
     const payload = rawPayload as CreateTheoreticalQuestionPayload;
     if (!payload || typeof payload !== 'object') {
@@ -545,6 +742,7 @@ app.whenReady().then(() => {
     }
 
     const createdAt = new Date().toISOString();
+    ensureDirExists(getQuestionsRootDir());
     const baseDir = getTheoryBaseDir();
     ensureDirExists(baseDir);
 
@@ -968,6 +1166,568 @@ app.whenReady().then(() => {
     const counts = calculateQuestionCounts(progress);
     broadcastDataRefresh({ counts, progress });
     return counts;
+  });
+
+  // ============ Practical Question Handlers ============
+  ipcMain.handle('practical:createQuestion', (_event, rawPayload: CreatePracticalQuestionPayload) => {
+    const payload = rawPayload as CreatePracticalQuestionPayload;
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid payload received.');
+    }
+
+    const { title, description, difficulty, section, lesson, files, testCases, image } = payload;
+
+    if (!title.trim() || !description.trim()) {
+      throw new Error('Title and description are required.');
+    }
+
+    if (!['Easy', 'Medium', 'Hard'].includes(difficulty)) {
+      throw new Error('Invalid difficulty level.');
+    }
+
+    const sectionDef = SECTION_DEFINITIONS[section];
+    if (!sectionDef) {
+      throw new Error('Invalid section selected.');
+    }
+
+    if (!sectionDef.lessons.includes(lesson)) {
+      throw new Error('Selected lesson does not belong to the chosen section.');
+    }
+
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error('At least one code file is required.');
+    }
+
+    // Validate that at least one file is marked as answer file
+    const hasAnswerFile = files.some(f => f.isAnswerFile);
+    if (!hasAnswerFile) {
+      throw new Error('At least one file must be marked as an answer file.');
+    }
+
+    // Validate all files
+    files.forEach((file, index) => {
+      if (!file.filename.trim()) {
+        throw new Error(`File #${index + 1} must have a filename.`);
+      }
+    });
+
+    if (!Array.isArray(testCases) || testCases.length < 3) {
+      throw new Error('At least 3 test cases are required.');
+    }
+
+    const normalizedTestCases = testCases.map((tc, index) => {
+      if (!tc || typeof tc.input !== 'string' || typeof tc.expectedOutput !== 'string') {
+        throw new Error(`Test case #${index + 1} is invalid.`);
+      }
+      const input = tc.input.trim();
+      const expectedOutput = tc.expectedOutput.trim();
+      if (!input || !expectedOutput) {
+        throw new Error(`Test case #${index + 1} must have both input and expected output.`);
+      }
+      return {
+        input,
+        expected_output: expectedOutput,
+        is_hidden: !!tc.isHidden,
+      };
+    });
+
+    const createdAt = new Date().toISOString();
+    ensureDirExists(getQuestionsRootDir());
+    const baseDir = getPracticalBaseDir();
+    ensureDirExists(baseDir);
+
+    const sectionSlug = slugify(sectionDef.label);
+    const lessonSlug = slugify(lesson);
+    const lessonDir = path.join(baseDir, sectionSlug, lessonSlug);
+    ensureDirExists(lessonDir);
+
+    const unique = crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : crypto.randomBytes(4).toString('hex');
+    const questionId = `practical-${Date.now()}-${unique}`;
+    const jsonFileName = `${questionId}.json`;
+    const jsonPath = path.join(lessonDir, jsonFileName);
+
+    let imageFileName: string | undefined;
+    let imageFilePath: string | undefined;
+
+    try {
+      if (image && image.dataUrl) {
+        const { buffer, extension } = parseImageDataUrl(image.dataUrl);
+        imageFileName = `${questionId}.${extension}`;
+        imageFilePath = path.join(lessonDir, imageFileName);
+        fs.writeFileSync(imageFilePath, buffer);
+      }
+
+      const problemData = {
+        id: questionId,
+        title: title.trim(),
+        description: description.replace(/\r\n/g, '\n').trim(),
+        difficulty,
+        section: sectionDef.label,
+        lesson,
+        files: files.map(f => ({
+          filename: f.filename.trim(),
+          content: f.content.replace(/\r\n/g, '\n'),
+          is_locked: f.isLocked,
+          is_answer_file: f.isAnswerFile,
+          language: f.language,
+        })),
+        test_cases: normalizedTestCases,
+        image: imageFileName || null,
+        created_at: createdAt,
+        updated_at: createdAt,
+      };
+
+      fs.writeFileSync(jsonPath, JSON.stringify(problemData, null, 2), 'utf-8');
+
+      // Note: We don't track practical questions in progress.theory like theoretical questions
+      // They are tracked in progress.practical by ID when completed
+      const progress = readProgress();
+      const counts = calculateQuestionCounts(progress);
+      broadcastDataRefresh({ counts, progress });
+
+      return {
+        id: questionId,
+        filePath: jsonPath,
+        section: sectionDef.label,
+        lesson,
+        counts,
+      };
+    } catch (error) {
+      if (imageFilePath && fs.existsSync(imageFilePath)) {
+        try {
+          fs.unlinkSync(imageFilePath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      if (fs.existsSync(jsonPath)) {
+        try {
+          fs.unlinkSync(jsonPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('practical:listQuestions', () => {
+    const records: PracticalQuestionRecord[] = [];
+    const baseDir = getPracticalBaseDir();
+    if (!fs.existsSync(baseDir)) {
+      return records;
+    }
+
+    for (const sectionKey of Object.keys(SECTION_DEFINITIONS)) {
+      const sectionDef = SECTION_DEFINITIONS[sectionKey];
+      const sectionDir = path.join(baseDir, slugify(sectionDef.label));
+      if (!fs.existsSync(sectionDir)) continue;
+
+      for (const lessonName of sectionDef.lessons) {
+        const lessonDir = path.join(sectionDir, slugify(lessonName));
+        if (!fs.existsSync(lessonDir)) continue;
+
+        const files = fs
+          .readdirSync(lessonDir)
+          .filter((file) => file.toLowerCase().endsWith('.json'))
+          .sort();
+
+        for (const file of files) {
+          const filePath = path.join(lessonDir, file);
+          try {
+            const rawData = fs.readFileSync(filePath, 'utf-8');
+            const data = JSON.parse(rawData);
+
+            const id = typeof data.id === 'string' && data.id.trim() ? data.id.trim() : path.basename(file, path.extname(file));
+            const title = typeof data.title === 'string' ? data.title : 'Untitled';
+            const description = typeof data.description === 'string' ? data.description : '';
+            const difficulty = ['Easy', 'Medium', 'Hard'].includes(data.difficulty) ? data.difficulty : 'Medium';
+            const createdAt = typeof data.created_at === 'string' ? data.created_at : undefined;
+            const updatedAt = typeof data.updated_at === 'string' ? data.updated_at : undefined;
+
+            const files: CodeFilePayload[] = Array.isArray(data.files)
+              ? data.files.map((f: any) => ({
+                  filename: typeof f.filename === 'string' ? f.filename : '',
+                  content: typeof f.content === 'string' ? f.content : '',
+                  isLocked: !!f.is_locked,
+                  isAnswerFile: !!f.is_answer_file,
+                  language: (f.language === 'c' || f.language === 'cpp') ? f.language : 'c',
+                }))
+              : [];
+
+            const testCases: TestCasePayload[] = Array.isArray(data.test_cases)
+              ? data.test_cases.map((tc: any) => ({
+                  input: typeof tc.input === 'string' ? tc.input : '',
+                  expectedOutput: typeof tc.expected_output === 'string' ? tc.expected_output : '',
+                  isHidden: !!tc.is_hidden,
+                }))
+              : [];
+
+            let imageDataUrl: string | undefined;
+            if (typeof data.image === 'string' && data.image.trim()) {
+              const imagePath = path.join(lessonDir, data.image.trim());
+              if (fs.existsSync(imagePath)) {
+                try {
+                  const imageBuffer = fs.readFileSync(imagePath);
+                  const ext = path.extname(imagePath).toLowerCase();
+                  const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null;
+                  if (mimeType) {
+                    imageDataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+                  }
+                } catch {
+                  // Ignore image read errors
+                }
+              }
+            }
+
+            records.push({
+              id,
+              title,
+              description,
+              difficulty,
+              sectionKey,
+              section: sectionDef.label,
+              lesson: lessonName,
+              filePath,
+              files,
+              testCases,
+              imageDataUrl,
+              createdAt,
+              updatedAt,
+            });
+          } catch (err) {
+            console.error(`Failed to parse practical question file: ${filePath}`, err);
+          }
+        }
+      }
+    }
+
+    return records;
+  });
+
+  ipcMain.handle('practical:updateQuestion', (_event, rawPayload: UpdatePracticalQuestionPayload) => {
+    const payload = rawPayload as UpdatePracticalQuestionPayload;
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid payload received.');
+    }
+
+    const baseDir = path.resolve(getPracticalBaseDir());
+    const resolvedPath = path.resolve(payload.filePath);
+    if (!isPathInside(baseDir, resolvedPath)) {
+      throw new Error('Invalid question path.');
+    }
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error('Question file not found.');
+    }
+
+    const { title, description, difficulty, sectionKey, lesson, files, testCases, image } = payload;
+
+    if (!title.trim() || !description.trim()) {
+      throw new Error('Title and description are required.');
+    }
+
+    if (!['Easy', 'Medium', 'Hard'].includes(difficulty)) {
+      throw new Error('Invalid difficulty level.');
+    }
+
+    const sectionDef = SECTION_DEFINITIONS[sectionKey];
+    if (!sectionDef) {
+      throw new Error('Invalid section selected.');
+    }
+
+    if (!sectionDef.lessons.includes(lesson)) {
+      throw new Error('Selected lesson does not belong to the chosen section.');
+    }
+
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error('At least one code file is required.');
+    }
+
+    // Validate that at least one file is marked as answer file
+    const hasAnswerFile = files.some(f => f.isAnswerFile);
+    if (!hasAnswerFile) {
+      throw new Error('At least one file must be marked as an answer file.');
+    }
+
+    // Validate all files
+    files.forEach((file, index) => {
+      if (!file.filename.trim()) {
+        throw new Error(`File #${index + 1} must have a filename.`);
+      }
+    });
+
+    if (!Array.isArray(testCases) || testCases.length < 3) {
+      throw new Error('At least 3 test cases are required.');
+    }
+
+    const normalizedTestCases = testCases.map((tc, index) => {
+      if (!tc || typeof tc.input !== 'string' || typeof tc.expectedOutput !== 'string') {
+        throw new Error(`Test case #${index + 1} is invalid.`);
+      }
+      const input = tc.input.trim();
+      const expectedOutput = tc.expectedOutput.trim();
+      if (!input || !expectedOutput) {
+        throw new Error(`Test case #${index + 1} must have both input and expected output.`);
+      }
+      return {
+        input,
+        expected_output: expectedOutput,
+        is_hidden: !!tc.isHidden,
+      };
+    });
+
+    const rawData = fs.readFileSync(resolvedPath, 'utf-8');
+    const existingData = JSON.parse(rawData);
+    const oldImageName = typeof existingData.image === 'string' && existingData.image.trim() ? existingData.image.trim() : undefined;
+    const oldImagePath = oldImageName ? path.join(path.dirname(resolvedPath), oldImageName) : undefined;
+
+    let newImageFileName: string | undefined;
+    let newImageFilePath: string | undefined;
+
+    try {
+      if (image !== undefined) {
+        if (oldImagePath && fs.existsSync(oldImagePath)) {
+          try {
+            fs.unlinkSync(oldImagePath);
+          } catch {
+            // Ignore cleanup errors
+          }
+        }
+
+        if (image && image.dataUrl) {
+          const { buffer, extension } = parseImageDataUrl(image.dataUrl);
+          const questionId = typeof existingData.id === 'string' ? existingData.id : payload.id;
+          newImageFileName = `${questionId}.${extension}`;
+          newImageFilePath = path.join(path.dirname(resolvedPath), newImageFileName);
+          fs.writeFileSync(newImageFilePath, buffer);
+        }
+      } else {
+        newImageFileName = oldImageName;
+      }
+
+      const updatedAt = new Date().toISOString();
+      const updatedData = {
+        ...existingData,
+        title: title.trim(),
+        description: description.replace(/\r\n/g, '\n').trim(),
+        difficulty,
+        section: sectionDef.label,
+        lesson,
+        files: files.map(f => ({
+          filename: f.filename.trim(),
+          content: f.content.replace(/\r\n/g, '\n'),
+          is_locked: f.isLocked,
+          is_answer_file: f.isAnswerFile,
+          language: f.language,
+        })),
+        test_cases: normalizedTestCases,
+        image: newImageFileName || null,
+        updated_at: updatedAt,
+      };
+
+      fs.writeFileSync(resolvedPath, JSON.stringify(updatedData, null, 2), 'utf-8');
+
+      const progress = readProgress();
+      const counts = calculateQuestionCounts(progress);
+      broadcastDataRefresh({ counts, progress });
+      return counts;
+    } catch (error) {
+      if (newImageFilePath && fs.existsSync(newImageFilePath)) {
+        try {
+          fs.unlinkSync(newImageFilePath);
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('practical:deleteQuestion', (_event, rawPayload: DeletePracticalQuestionPayload) => {
+    const payload = rawPayload as DeletePracticalQuestionPayload;
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid payload received.');
+    }
+
+    const baseDir = path.resolve(getPracticalBaseDir());
+    const resolvedPath = path.resolve(payload.filePath);
+    if (!isPathInside(baseDir, resolvedPath)) {
+      throw new Error('Invalid question path.');
+    }
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error('Question file not found.');
+    }
+
+    const rawData = fs.readFileSync(resolvedPath, 'utf-8');
+    const data = JSON.parse(rawData);
+    const imageName = typeof data.image === 'string' && data.image.trim() ? data.image.trim() : undefined;
+    const imagePath = imageName ? path.join(path.dirname(resolvedPath), imageName) : undefined;
+
+    fs.unlinkSync(resolvedPath);
+    if (imagePath && fs.existsSync(imagePath)) {
+      try {
+        fs.unlinkSync(imagePath);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+
+    const progress = readProgress();
+    // Remove from practical progress if exists
+    const questionId = payload.id;
+    if (progress.practical[questionId]) {
+      delete progress.practical[questionId];
+    }
+
+    writeProgress(progress);
+    const counts = calculateQuestionCounts(progress);
+    broadcastDataRefresh({ counts, progress });
+    return counts;
+  });
+
+  // ============ Code Execution Handler ============
+  ipcMain.handle('practical:executeCode', async (_event, rawPayload: ExecuteCodePayload): Promise<ExecuteCodeResult> => {
+    const payload = rawPayload as ExecuteCodePayload;
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('Invalid payload received.');
+    }
+
+    const { files, input } = payload;
+
+    if (!Array.isArray(files) || files.length === 0) {
+      throw new Error('At least one code file is required to execute.');
+    }
+
+    // Create a temporary directory for compilation
+    const tempDir = path.join(app.getPath('temp'), `dsa-exec-${Date.now()}`);
+    ensureDirExists(tempDir);
+
+    try {
+      // Write all code files to temp directory
+      for (const file of files) {
+        const filePath = path.join(tempDir, file.filename);
+        fs.writeFileSync(filePath, file.content, 'utf-8');
+      }
+
+      // Determine the language (assume all files use the same language)
+      const language = files[0].language;
+
+      // Find the main file (usually main.c or main.cpp, or first file)
+      const mainFile = files.find(f => f.filename.toLowerCase().includes('main')) || files[0];
+      const executableName = language === 'cpp' ? 'program.exe' : 'program.exe';
+      const executablePath = path.join(tempDir, executableName);
+
+      // Compile the code
+      const compiler = language === 'cpp' ? 'g++' : 'gcc';
+      const compileArgs = [
+        ...files.map(f => f.filename),
+        '-o',
+        executableName,
+      ];
+
+      const compileResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
+        const compileProcess = spawn(compiler, compileArgs, { cwd: tempDir });
+        let compileError = '';
+
+        compileProcess.stderr.on('data', (data) => {
+          compileError += data.toString();
+        });
+
+        compileProcess.on('close', (code) => {
+          if (code !== 0) {
+            resolve({ success: false, error: compileError });
+          } else {
+            resolve({ success: true });
+          }
+        });
+
+        compileProcess.on('error', (err) => {
+          resolve({ success: false, error: `Compilation failed: ${err.message}` });
+        });
+      });
+
+      if (!compileResult.success) {
+        return {
+          success: false,
+          error: compileResult.error || 'Compilation failed',
+        };
+      }
+
+      // Execute the compiled program with input
+      const startTime = Date.now();
+      const executeResult = await new Promise<{ success: boolean; output?: string; error?: string }>((resolve) => {
+        const executeProcess = spawn(executablePath, [], { cwd: tempDir });
+        let output = '';
+        let errorOutput = '';
+
+        // Provide input to the program
+        if (input) {
+          executeProcess.stdin.write(input);
+          executeProcess.stdin.end();
+        }
+
+        executeProcess.stdout.on('data', (data) => {
+          output += data.toString();
+        });
+
+        executeProcess.stderr.on('data', (data) => {
+          errorOutput += data.toString();
+        });
+
+        executeProcess.on('close', (code) => {
+          if (code !== 0) {
+            resolve({ success: false, error: errorOutput || `Program exited with code ${code}` });
+          } else {
+            resolve({ success: true, output });
+          }
+        });
+
+        executeProcess.on('error', (err) => {
+          resolve({ success: false, error: `Execution failed: ${err.message}` });
+        });
+
+        // Timeout after 10 seconds
+        setTimeout(() => {
+          executeProcess.kill();
+          resolve({ success: false, error: 'Execution timeout (10 seconds)' });
+        }, 10000);
+      });
+
+      const executionTime = Date.now() - startTime;
+
+      // Clean up temp directory
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      if (!executeResult.success) {
+        return {
+          success: false,
+          error: executeResult.error,
+          executionTime,
+        };
+      }
+
+      return {
+        success: true,
+        output: executeResult.output,
+        executionTime,
+      };
+    } catch (error) {
+      // Clean up temp directory on error
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
   });
 
   ipcMain.on('open-practice', () => {

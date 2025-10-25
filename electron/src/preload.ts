@@ -73,6 +73,77 @@ export interface DeleteTheoreticalQuestionPayload {
   filePath: string;
 }
 
+export interface TestCasePayload {
+  input: string;
+  expectedOutput: string;
+  isHidden: boolean;
+}
+
+export interface CodeFilePayload {
+  filename: string;
+  content: string;
+  isLocked: boolean;
+  isAnswerFile: boolean;
+  language: 'c' | 'cpp';
+}
+
+export interface CreatePracticalQuestionPayload {
+  title: string;
+  description: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  section: string;
+  lesson: string;
+  files: CodeFilePayload[];
+  testCases: TestCasePayload[];
+  image?: ImagePayload | null;
+}
+
+export interface PracticalQuestionRecord {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  sectionKey: string;
+  section: string;
+  lesson: string;
+  filePath: string;
+  files: CodeFilePayload[];
+  testCases: TestCasePayload[];
+  imageDataUrl?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface UpdatePracticalQuestionPayload {
+  id: string;
+  filePath: string;
+  title: string;
+  description: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  sectionKey: string;
+  lesson: string;
+  files: CodeFilePayload[];
+  testCases: TestCasePayload[];
+  image?: ImagePayload | null;
+}
+
+export interface DeletePracticalQuestionPayload {
+  id: string;
+  filePath: string;
+}
+
+export interface ExecuteCodePayload {
+  files: CodeFilePayload[];
+  input: string;
+}
+
+export interface ExecuteCodeResult {
+  success: boolean;
+  output?: string;
+  error?: string;
+  executionTime?: number;
+}
+
 export interface ElectronAPI {
   openMenu: () => void;
   openPractice: () => void;
@@ -89,6 +160,11 @@ export interface ElectronAPI {
   listTheoreticalQuestions: () => Promise<TheoreticalQuestionRecord[]>;
   updateTheoreticalQuestion: (payload: UpdateTheoreticalQuestionPayload) => Promise<QuestionCounts>;
   deleteTheoreticalQuestion: (payload: DeleteTheoreticalQuestionPayload) => Promise<QuestionCounts>;
+  createPracticalQuestion: (payload: CreatePracticalQuestionPayload) => Promise<CreateQuestionResult>;
+  listPracticalQuestions: () => Promise<PracticalQuestionRecord[]>;
+  updatePracticalQuestion: (payload: UpdatePracticalQuestionPayload) => Promise<QuestionCounts>;
+  deletePracticalQuestion: (payload: DeletePracticalQuestionPayload) => Promise<QuestionCounts>;
+  executeCodeWithInput: (payload: ExecuteCodePayload) => Promise<ExecuteCodeResult>;
   onNavigate: (callback: (route: string) => void) => void;
   onDataRefresh: (callback: (data: DataRefreshPayload) => void) => () => void;
   // Window controls
@@ -120,6 +196,15 @@ const api: ElectronAPI = {
     ipcRenderer.invoke('theory:updateQuestion', payload),
   deleteTheoreticalQuestion: (payload) =>
     ipcRenderer.invoke('theory:deleteQuestion', payload),
+  createPracticalQuestion: (payload) =>
+    ipcRenderer.invoke('practical:createQuestion', payload),
+  listPracticalQuestions: () => ipcRenderer.invoke('practical:listQuestions'),
+  updatePracticalQuestion: (payload) =>
+    ipcRenderer.invoke('practical:updateQuestion', payload),
+  deletePracticalQuestion: (payload) =>
+    ipcRenderer.invoke('practical:deleteQuestion', payload),
+  executeCodeWithInput: (payload) =>
+    ipcRenderer.invoke('practical:executeCode', payload),
   onNavigate: (callback: (route: string) => void) => {
     ipcRenderer.on('navigate', (_event, route) => callback(route));
   },
