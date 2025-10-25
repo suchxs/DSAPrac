@@ -65,8 +65,20 @@ const QuestionMaker: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-50 pt-8">
-      <div className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-12">
+    <div className="h-screen relative overflow-y-auto pt-8 scroll-smooth bg-neutral-950 text-neutral-50">
+      {/* Animated Background GIF */}
+      <div 
+        className="fixed inset-0 -z-10"
+        style={{
+          backgroundImage: 'url(/assets/background.gif)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          opacity: 0.35,
+        }}
+      />
+
+      <div className="container mx-auto px-6 py-4 pb-16 relative max-w-6xl">
         <div className="mb-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Question Creator</h1>
@@ -99,7 +111,7 @@ const QuestionMaker: React.FC = () => {
                   onClick={handleViewAllQuestions}
                   className="inline-flex w-full items-center justify-center rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
                 >
-                  View All Questions
+                  View Theoretical Questions
                 </button>
               </div>
             </div>
@@ -141,7 +153,7 @@ const QuestionMaker: React.FC = () => {
                   onClick={handleViewAllPractical}
                   className="inline-flex w-full items-center justify-center rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
                 >
-                  View All Questions
+                  View Practical Questions
                 </button>
               </div>
             </div>

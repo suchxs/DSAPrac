@@ -53,7 +53,7 @@ const ExamConfig: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden pt-8">
+    <div className="h-screen relative overflow-y-auto pt-8 scroll-smooth">
       {/* Animated Background GIF */}
       <div 
         className="fixed inset-0 -z-10"
@@ -66,7 +66,7 @@ const ExamConfig: React.FC = () => {
         }}
       />
 
-      <div className="container mx-auto px-6 py-8 relative">
+      <div className="container mx-auto px-6 py-4 pb-16 relative">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-semibold tracking-tight">Exam Mode</h1>

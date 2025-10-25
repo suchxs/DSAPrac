@@ -547,8 +547,8 @@ function createWindow() {
 
   mainWindow = new BrowserWindow({
     title: 'DSAPrac',
-    width: 1100,
-    height: 900,
+    width: 1400,
+    height: 1080,
     icon: nativeImage.createFromPath(iconPath),
     frame: false, // Remove default title bar
     backgroundColor: '#000000', // Black background
@@ -2064,9 +2064,9 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on('open-menu', () => {
-    // Return to main menu and resize to original size
+    // Return to main menu - keep same size for consistency
     if (mainWindow) {
-      mainWindow.setSize(1100, 900);
+      mainWindow.setSize(1400, 1080);
       mainWindow.webContents.send('navigate', '/');
     }
   });
