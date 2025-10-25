@@ -189,7 +189,7 @@ export interface ElectronAPI {
   openQuestionMaker: () => void;
   exitApp: () => void;
   getProgress: () => Promise<ProgressData>;
-  updateTheoryProgress: (tag: string, answeredDelta: number) => Promise<ProgressData>;
+  updateTheory: (tag: string, answeredDelta: number | string[]) => Promise<ProgressData>;
   setPracticalDone: (problemId: string, done: boolean) => Promise<ProgressData>;
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
   getQuestionCounts: () => Promise<QuestionCounts>;
@@ -225,7 +225,7 @@ const api: ElectronAPI = {
   openQuestionMaker: () => ipcRenderer.send('open-question-maker'),
   exitApp: () => ipcRenderer.send('app-exit'),
   getProgress: () => ipcRenderer.invoke('progress:get'),
-  updateTheoryProgress: (tag: string, answeredDelta: number) =>
+  updateTheory: (tag: string, answeredDelta: number | string[]) =>
     ipcRenderer.invoke('progress:updateTheory', tag, answeredDelta),
   setPracticalDone: (problemId: string, done: boolean) =>
     ipcRenderer.invoke('progress:setPracticalDone', problemId, done),

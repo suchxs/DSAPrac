@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Heatmap from '../components/Heatmap';
 
 interface ProgressData {
@@ -9,6 +10,7 @@ interface ProgressData {
 }
 
 const MainMenu: React.FC = () => {
+  const navigate = useNavigate();
   const [progress, setProgress] = useState<ProgressData | null>(null);
 
   useEffect(() => {
@@ -50,9 +52,7 @@ const MainMenu: React.FC = () => {
   };
 
   const handleSettings = () => {
-    console.log('Settings clicked');
-    // TODO: Open settings window or navigate to settings page
-    alert('Settings feature coming soon!');
+    navigate('/settings');
   };
 
   const openGitHub = (url: string) => {

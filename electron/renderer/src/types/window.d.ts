@@ -10,7 +10,7 @@ export interface ElectronAPI {
   onNavigate: (callback: (route: string) => void) => void;
   // Progress APIs
   getProgress: () => Promise<ProgressData>;
-  updateTheory: (tag: string, answeredDelta: number) => Promise<ProgressData>;
+  updateTheory: (tag: string, answeredDelta: number | string[]) => Promise<ProgressData>;
   setPracticalDone: (problemId: string, done: boolean) => Promise<ProgressData>;
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
   // Question APIs
@@ -40,7 +40,7 @@ export interface ElectronAPI {
 
 export interface ProgressData {
   version: number;
-  theory: Record<string, { answered: number; total: number; lastAnsweredAt?: string }>;
+  theory: Record<string, { answered: number; total: number; lastAnsweredAt?: string; answeredQuestions?: string[] }>;
   practical: Record<string, { completed: boolean; completedAt?: string }>;
   activity: Record<string, number>;
 }
@@ -124,6 +124,7 @@ export interface CodeFilePayload {
   content: string;
   isLocked: boolean; // If true, students cannot edit this file
   isAnswerFile: boolean; // If true, this file will be cleared in exam mode (keeps only comment)
+  isHidden: boolean; // If true, this file is hidden from students but visible in library
   language: 'c' | 'cpp';
 }
 
