@@ -53,8 +53,13 @@ const PracticalProblemSolver: React.FC = () => {
   const [runOutput, setRunOutput] = useState<string>('');
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const periodicSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isSavingRef = useRef(false);
   const currentFileRef = useRef<string>('');
+  const filesContentRef = useRef<Map<string, string>>(new Map()); // Track latest content without re-renders
+  const saveCurrentFileRef = useRef<(() => void) | null>(null); // Ref to always have latest save function
   const [showAddFileModal, setShowAddFileModal] = useState(false);
   const [newFileName, setNewFileName] = useState('');
   const [isHeaderFile, setIsHeaderFile] = useState(false);
@@ -66,15 +71,72 @@ const PracticalProblemSolver: React.FC = () => {
   const inputBufferRef = useRef<string>('');
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
 
+  // Save function defined early for use in effects
+  const saveCurrentFile = () => {
+    if (!selectedFile || !question || isSavingRef.current) return;
+
+    // Immediately update UI state for instant feedback (no IPC call blocking)
+    isSavingRef.current = true;
+    setIsSaving(true);
+    setHasUnsavedChanges(false);
+    
+    // Quick visual feedback
+    setTimeout(() => {
+      setIsSaving(false);
+      isSavingRef.current = false;
+    }, 300);
+    
+    // Get the latest file contents from ref
+    const filesToSave = files.map((f) => {
+      const latestContent = filesContentRef.current.get(f.filename);
+      return {
+        filename: f.filename,
+        content: latestContent !== undefined ? latestContent : f.content,
+      };
+    });
+    
+    // Perform actual save in background (fire and forget)
+    window.api.savePracticalProgress({
+      questionId: question.id,
+      files: filesToSave,
+    }).catch((error) => {
+      console.error('Failed to save progress:', error);
+    });
+  };
+
+  // Keep ref updated with latest save function
+  saveCurrentFileRef.current = saveCurrentFile;
+
   useEffect(() => {
     // Load question data when component mounts
     loadQuestion();
 
-    // Cleanup auto-save timer on unmount
+    // Set up periodic auto-save every 5 minutes
+    periodicSaveTimerRef.current = setInterval(() => {
+      if (hasUnsavedChanges && !isSavingRef.current) {
+        saveCurrentFile();
+      }
+    }, 5 * 60 * 1000); // 5 minutes
+
+    // Set up Ctrl+S keyboard shortcut
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        // Use ref to always call the latest save function
+        saveCurrentFileRef.current?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup auto-save timers and listeners on unmount
     return () => {
       if (autoSaveTimerRef.current) {
         clearTimeout(autoSaveTimerRef.current);
       }
+      if (periodicSaveTimerRef.current) {
+        clearInterval(periodicSaveTimerRef.current);
+      }
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -199,47 +261,35 @@ const PracticalProblemSolver: React.FC = () => {
       return;
     }
     
+    // Update ref immediately (no re-render, instant)
+    filesContentRef.current.set(currentFileRef.current, value);
+    
     setCode(value);
     setHasUnsavedChanges(true);
 
-    // Update file in visible files state
-    setFiles((prevFiles) =>
-      prevFiles.map((f) =>
-        f.filename === currentFileRef.current ? { ...f, content: value } : f
-      )
-    );
-    
-    // Also update in all files state (for compilation)
-    setAllFiles((prevFiles) =>
-      prevFiles.map((f) =>
-        f.filename === currentFileRef.current ? { ...f, content: value } : f
-      )
-    );
-
-    // Auto-save after 2 seconds of inactivity
+    // Debounce the state updates to reduce re-renders
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
     }
+    
     autoSaveTimerRef.current = setTimeout(() => {
+      // Update file in visible files state
+      setFiles((prevFiles) =>
+        prevFiles.map((f) =>
+          f.filename === currentFileRef.current ? { ...f, content: value } : f
+        )
+      );
+      
+      // Also update in all files state (for compilation)
+      setAllFiles((prevFiles) =>
+        prevFiles.map((f) =>
+          f.filename === currentFileRef.current ? { ...f, content: value } : f
+        )
+      );
+      
+      // Auto-save
       saveCurrentFile();
     }, 2000);
-  };
-
-  const saveCurrentFile = async () => {
-    if (!selectedFile || !question) return;
-
-    try {
-      await window.api.savePracticalProgress({
-        questionId: question.id,
-        files: files.map((f) => ({
-          filename: f.filename,
-          content: f.content,
-        })),
-      });
-      setHasUnsavedChanges(false);
-    } catch (error) {
-      console.error('Failed to save progress:', error);
-    }
   };
 
   const handleSave = () => {
@@ -610,11 +660,11 @@ const PracticalProblemSolver: React.FC = () => {
           <div className="h-12 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between px-4">
             <button
               onClick={handleSave}
-              disabled={!hasUnsavedChanges}
+              disabled={!hasUnsavedChanges || isSaving}
               className="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors cursor-pointer"
             >
-              <Save size={14} />
-              Save (Ctrl+S)
+              <Save size={14} className={isSaving ? 'animate-pulse' : ''} />
+              {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save (Ctrl+S)' : 'Saved'}
             </button>
             <div className="flex gap-2">
               <button
@@ -723,18 +773,6 @@ const PracticalProblemSolver: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Ctrl+S Save Listener */}
-      <div
-        tabIndex={-1}
-        onKeyDown={(e) => {
-          if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-            e.preventDefault();
-            handleSave();
-          }
-        }}
-        style={{ position: 'absolute', width: 0, height: 0, opacity: 0 }}
-      />
 
       {/* Run Code Modal with Interactive Terminal */}
       {showRunModal && (

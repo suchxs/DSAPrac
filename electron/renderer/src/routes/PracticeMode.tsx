@@ -307,20 +307,20 @@ const PracticeMode: React.FC = () => {
               Select one problem to practice.
             </p>
 
-            <div className="flex-1 overflow-y-auto pr-2 space-y-3 scroll-smooth max-h-[420px]" style={{ scrollbarWidth: 'thin' }}>
+            <div className="flex-1 overflow-y-auto pr-2 space-y-6 scroll-smooth max-h-[420px]" style={{ scrollbarWidth: 'thin' }}>
               {Object.keys(groupedPractical).length === 0 ? (
                 <div className="p-4 rounded-xl bg-white/5 text-sm opacity-80">
                   No coding problems yet. Create problems in Question Maker to see them here.
                 </div>
               ) : (
-                Object.entries(groupedPractical).map(([sectionName, lessons]) => (
-                  <div key={sectionName} className="space-y-2">
-                    <h3 className="font-semibold text-xs opacity-90 sticky top-0 bg-neutral-900/95 py-1.5 backdrop-blur-sm">
+                Object.entries(groupedPractical).map(([sectionName, lessons], idx) => (
+                  <div key={sectionName} className={idx > 0 ? 'mt-6' : ''}>
+                    <h3 className="text-xs font-medium opacity-75 mb-2">
                       {sectionName}
                     </h3>
                     {Object.entries(lessons).map(([lessonName, questions]) => (
-                      <div key={lessonName} className="space-y-1.5 pl-2 mt-2">
-                        <h4 className="text-xs font-medium opacity-75 mb-1.5">{lessonName}</h4>
+                      <div key={lessonName} className="space-y-1.5 pl-2 mt-3">
+                        <h4 className="text-xs font-medium opacity-75 mb-2">{lessonName}</h4>
                         <div className="space-y-1.5">
                           {questions.map((question) => {
                             const isSelected = selectedPractical === question.id;
