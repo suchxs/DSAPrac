@@ -2,10 +2,20 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GlassCard from '../components/GlassCard';
 
+interface PracticalProgress {
+  completed: boolean;
+  completedAt?: string;
+  bestScore?: number;
+  totalTests?: number;
+  attempts?: number;
+  lastAttemptAt?: string;
+  lastScore?: number;
+}
+
 interface ProgressData {
   version: number;
   theory: Record<string, { answered: number; total: number; lastAnsweredAt?: string }>;
-  practical: Record<string, { completed: boolean; completedAt?: string }>;
+  practical: Record<string, PracticalProgress>;
   activity: Record<string, number>;
 }
 
@@ -324,8 +334,30 @@ const PracticeMode: React.FC = () => {
                         <div className="space-y-1.5">
                           {questions.map((question) => {
                             const isSelected = selectedPractical === question.id;
-                            const isCompleted = progress?.practical[question.id]?.completed || false;
-                            
+                            const progressEntry = progress?.practical[question.id];
+                            const isCompleted = progressEntry?.completed ?? false;
+                            const bestScore = progressEntry?.bestScore ?? 0;
+                            const totalTests =
+                              progressEntry?.totalTests ?? (question.testCases?.length ?? 0);
+                            const attempts = progressEntry?.attempts ?? 0;
+
+                            let statusLabel = 'Not started';
+                            let statusClass =
+                              'bg-zinc-800/60 text-zinc-300 border border-zinc-700/50';
+
+                            if (isCompleted) {
+                              statusLabel = 'Solved';
+                              statusClass =
+                                'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40';
+                            } else if (attempts > 0) {
+                              statusLabel =
+                                bestScore > 0 && totalTests > 0
+                                  ? `Attempted ${bestScore}/${totalTests}`
+                                  : 'Attempted';
+                              statusClass =
+                                'bg-amber-500/15 text-amber-300 border border-amber-500/40';
+                            }
+
                             return (
                               <button
                                 key={question.id}
@@ -351,9 +383,21 @@ const PracticeMode: React.FC = () => {
                                           <path
                                             fillRule="evenodd"
                                             d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                            clipRule="evenodd"
-                                          />
-                                        </svg>
+                                              clipRule="evenodd"
+                                            />
+                                          </svg>
+                                        )}
+                                    </div>
+                                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                                      <span
+                                        className={`text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide border ${statusClass}`}
+                                      >
+                                        {statusLabel}
+                                      </span>
+                                      {!isCompleted && attempts > 0 && totalTests > 0 && (
+                                        <span className="text-[10px] text-neutral-500 uppercase tracking-wide">
+                                          {attempts} attempt{attempts === 1 ? '' : 's'}
+                                        </span>
                                       )}
                                     </div>
                                   </div>

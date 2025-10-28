@@ -1,10 +1,20 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
 
+export interface PracticalProgress {
+  completed: boolean;
+  completedAt?: string;
+  bestScore?: number;
+  totalTests?: number;
+  attempts?: number;
+  lastAttemptAt?: string;
+  lastScore?: number;
+}
+
 export interface ProgressData {
   version: number;
   theory: Record<string, { answered: number; total: number; lastAnsweredAt?: string }>;
-  practical: Record<string, { completed: boolean; completedAt?: string }>;
+  practical: Record<string, PracticalProgress>;
   activity: Record<string, number>;
 }
 
@@ -77,6 +87,13 @@ export interface TestCasePayload {
   input: string;
   expectedOutput: string;
   isHidden: boolean;
+}
+
+export interface RecordPracticalActivityPayload {
+  questionId: string;
+  passedCount: number;
+  totalCount: number;
+  timestamp?: string;
 }
 
 export interface CodeFilePayload {
@@ -190,7 +207,7 @@ export interface ElectronAPI {
   exitApp: () => void;
   getProgress: () => Promise<ProgressData>;
   updateTheory: (tag: string, answeredDelta: number | string[]) => Promise<ProgressData>;
-  setPracticalDone: (problemId: string, done: boolean) => Promise<ProgressData>;
+  setPracticalDone: (problemId: string, done: boolean, totalTests?: number) => Promise<ProgressData>;
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
   getQuestionCounts: () => Promise<QuestionCounts>;
   createTheoreticalQuestion: (payload: CreateTheoreticalQuestionPayload) => Promise<CreateQuestionResult>;
@@ -216,7 +233,7 @@ export interface ElectronAPI {
   savePracticalProgress: (payload: any) => Promise<void>;
   runPracticalCode: (payload: any) => Promise<any>;
   submitPracticalSolution: (payload: any) => Promise<any>;
-  recordPracticalActivity: (payload: any) => Promise<void>;
+  recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -234,8 +251,8 @@ const api: ElectronAPI = {
   getProgress: () => ipcRenderer.invoke('progress:get'),
   updateTheory: (tag: string, answeredDelta: number | string[]) =>
     ipcRenderer.invoke('progress:updateTheory', tag, answeredDelta),
-  setPracticalDone: (problemId: string, done: boolean) =>
-    ipcRenderer.invoke('progress:setPracticalDone', problemId, done),
+  setPracticalDone: (problemId: string, done: boolean, totalTests?: number) =>
+    ipcRenderer.invoke('progress:setPracticalDone', problemId, done, totalTests),
   recordActivity: (dateKey?: string) =>
     ipcRenderer.invoke('progress:recordActivity', dateKey),
   getQuestionCounts: () => ipcRenderer.invoke('questions:getCounts'),
@@ -288,7 +305,8 @@ const api: ElectronAPI = {
   savePracticalProgress: (payload) => ipcRenderer.invoke('save-practical-progress', payload),
   runPracticalCode: (payload) => ipcRenderer.invoke('run-practical-code', payload),
   submitPracticalSolution: (payload) => ipcRenderer.invoke('submit-practical-solution', payload),
-  recordPracticalActivity: (payload) => ipcRenderer.invoke('record-practical-activity', payload),
+  recordPracticalActivity: (payload: RecordPracticalActivityPayload) =>
+    ipcRenderer.invoke('record-practical-activity', payload),
   // Window controls
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),

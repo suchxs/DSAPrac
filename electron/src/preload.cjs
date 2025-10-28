@@ -12,7 +12,8 @@ contextBridge.exposeInMainWorld('api', {
   // Progress APIs
   getProgress: () => ipcRenderer.invoke('progress:get'),
   updateTheory: (tag, answeredDelta) => ipcRenderer.invoke('progress:updateTheory', tag, answeredDelta),
-  setPracticalDone: (problemId, done) => ipcRenderer.invoke('progress:setPracticalDone', problemId, done),
+  setPracticalDone: (problemId, done, totalTests) =>
+    ipcRenderer.invoke('progress:setPracticalDone', problemId, done, totalTests),
   recordActivity: (dateKey) => ipcRenderer.invoke('progress:recordActivity', dateKey),
   // Question count APIs
   getQuestionCounts: () => ipcRenderer.invoke('questions:getCounts'),

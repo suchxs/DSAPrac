@@ -11,7 +11,7 @@ export interface ElectronAPI {
   // Progress APIs
   getProgress: () => Promise<ProgressData>;
   updateTheory: (tag: string, answeredDelta: number | string[]) => Promise<ProgressData>;
-  setPracticalDone: (problemId: string, done: boolean) => Promise<ProgressData>;
+  setPracticalDone: (problemId: string, done: boolean, totalTests?: number) => Promise<ProgressData>;
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
   // Question APIs
   getQuestionCounts: () => Promise<QuestionCounts>;
@@ -45,10 +45,20 @@ export interface ElectronAPI {
   windowIsMaximized: () => Promise<boolean>;
 }
 
+export interface PracticalProgress {
+  completed: boolean;
+  completedAt?: string;
+  bestScore?: number;
+  totalTests?: number;
+  attempts?: number;
+  lastAttemptAt?: string;
+  lastScore?: number;
+}
+
 export interface ProgressData {
   version: number;
   theory: Record<string, { answered: number; total: number; lastAnsweredAt?: string; answeredQuestions?: string[] }>;
-  practical: Record<string, { completed: boolean; completedAt?: string }>;
+  practical: Record<string, PracticalProgress>;
   activity: Record<string, number>;
 }
 
@@ -269,7 +279,9 @@ export interface SubmitPracticalSolutionResult {
 
 export interface RecordPracticalActivityPayload {
   questionId: string;
-  points: number;
+  passedCount: number;
+  totalCount: number;
+  timestamp?: string;
 }
 
 declare global {

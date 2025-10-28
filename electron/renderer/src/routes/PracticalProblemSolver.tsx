@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Editor } from '@monaco-editor/react';
-import { Play, Send, Save, X, Terminal as TerminalIcon } from 'lucide-react';
+import { Play, Send, Save, X, ArrowLeft } from 'lucide-react';
 import Terminal from '../components/Terminal';
 import '@xterm/xterm/css/xterm.css';
 
@@ -70,6 +70,9 @@ const PracticalProblemSolver: React.FC = () => {
   const [inputBuffer, setInputBuffer] = useState('');
   const inputBufferRef = useRef<string>('');
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
+  const [score, setScore] = useState(0);
+  const [maxScore, setMaxScore] = useState(0);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Save function defined early for use in effects
   const saveCurrentFile = () => {
@@ -209,6 +212,9 @@ const PracticalProblemSolver: React.FC = () => {
       }
       
       setQuestion(questionData);
+      setScore(0);
+      setMaxScore(Array.isArray(questionData.testCases) ? questionData.testCases.length : 0);
+      setShowSuccessModal(false);
       
       // Initialize ALL files (including hidden) - blank out answer files
       const allFilesWithContent = questionData.files.map((f: CodeFile) => ({
@@ -411,6 +417,7 @@ const PracticalProblemSolver: React.FC = () => {
     setIsSubmitting(true);
     setRunOutput('');
     setTestResults([]);
+    setShowSuccessModal(false);
 
     try {
       // Use ALL files including hidden ones for compilation
@@ -424,22 +431,28 @@ const PracticalProblemSolver: React.FC = () => {
         testCases: question.testCases,
       });
 
-      setTestResults(results.testResults);
+      setTestResults(results.testResults || []);
 
-      // Award points based on passing test cases
-      const passedCount = results.testResults.filter((r: TestResult) => r.passed).length;
-      if (passedCount > 0) {
-        await window.api.recordPracticalActivity({
-          questionId: question.id,
-          points: passedCount,
-        });
+      const totalTests = Array.isArray(results.testResults) ? results.testResults.length : 0;
+      const passedCount = (results.testResults || []).filter((r: TestResult) => r.passed).length;
+      setScore(passedCount);
+      setMaxScore(totalTests);
+
+      await window.api.recordPracticalActivity({
+        questionId: question.id,
+        passedCount,
+        totalCount: totalTests,
+        timestamp: new Date().toISOString(),
+      });
+
+      if (totalTests > 0 && passedCount === totalTests) {
+        await window.api.setPracticalDone(question.id, true, totalTests);
+        setShowSuccessModal(true);
       }
 
-      // Show summary
-      const totalTests = results.testResults.length;
       const visibleTests = question.testCases.filter((tc) => !tc.isHidden).length;
       setRunOutput(
-        `Submitted! ${passedCount}/${totalTests} test cases passed (${visibleTests} visible)`
+        `Submitted! ${passedCount}/${totalTests} test cases passed (${visibleTests} visible) | Score ${passedCount} pts`
       );
     } catch (error: any) {
       setRunOutput(`Submission error: ${error.message}`);
@@ -534,6 +547,15 @@ const PracticalProblemSolver: React.FC = () => {
     setShowUnsavedModal(false);
   };
 
+  const handleReturnToPractice = () => {
+    setShowSuccessModal(false);
+    handleClose();
+  };
+
+  const handleRetrySubmission = () => {
+    setShowSuccessModal(false);
+  };
+
   const getDifficultyColor = (difficulty: 'Easy' | 'Medium' | 'Hard') => {
     switch (difficulty) {
       case 'Easy':
@@ -557,6 +579,9 @@ const PracticalProblemSolver: React.FC = () => {
 
   const currentFile = files.find((f) => f.filename === selectedFile);
   const isReadOnly = currentFile?.isLocked || false;
+  const displayedMaxScore = maxScore || (question.testCases?.length ?? 0);
+  const scorePercentage =
+    displayedMaxScore > 0 ? Math.round((score / displayedMaxScore) * 100) : 0;
 
   return (
     <div className="h-screen bg-black text-white flex flex-col">
@@ -581,6 +606,13 @@ const PracticalProblemSolver: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Panel - Problem Description */}
         <div className="w-1/4 border-r border-zinc-800 overflow-y-auto bg-zinc-950 p-4">
+          <button
+            onClick={handleClose}
+            className="mb-4 inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 transition-colors cursor-pointer"
+          >
+            <ArrowLeft size={14} />
+            Back to Practice
+          </button>
           <h2 className="text-lg font-semibold mb-2">{question.title}</h2>
           <div className="text-sm opacity-80 mb-4">
             <div className="mb-1">{question.section} / {question.lesson}</div>
@@ -691,6 +723,21 @@ const PracticalProblemSolver: React.FC = () => {
         <div className="w-1/4 border-l border-zinc-800 flex flex-col bg-zinc-950">
           {/* Test Cases */}
           <div className="flex-1 overflow-y-auto p-4">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/80 p-4 mb-4">
+              <div className="text-xs uppercase tracking-wide text-neutral-500">Score</div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-3xl font-semibold text-white">{score}</span>
+                <span className="text-sm text-neutral-500">
+                  / {displayedMaxScore}
+                </span>
+              </div>
+              <div className="mt-1 text-xs text-neutral-500">
+                {displayedMaxScore > 0
+                  ? `${scorePercentage}% - 1 point per passing test case`
+                  : 'No test cases available for scoring'}
+              </div>
+            </div>
+
             <h3 className="text-sm font-semibold mb-3">Test Cases</h3>
             <div className="space-y-3">
               {question.testCases.map((tc, index) => {
@@ -866,6 +913,48 @@ const PracticalProblemSolver: React.FC = () => {
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded text-sm transition-colors cursor-pointer"
               >
                 Add File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSuccessModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="w-full max-w-md rounded-2xl border border-emerald-600/40 bg-neutral-900/95 p-8 shadow-[0_0_30px_rgba(16,185,129,0.35)]">
+            <div className="flex flex-col items-center text-center gap-4">
+              <div className="flex items-center justify-center w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40">
+                <svg
+                  className="w-8 h-8 text-emerald-400"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h2 className="text-2xl font-semibold text-white">Accepted!</h2>
+                <p className="mt-1 text-sm text-neutral-400">
+                  All {displayedMaxScore} test cases passed. Perfect score achieved.
+                </p>
+                <p className="mt-2 text-xs uppercase tracking-wide text-emerald-400">
+                  100% Score - {displayedMaxScore} pts earned
+                </p>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={handleRetrySubmission}
+                className="px-5 py-2.5 bg-neutral-900 border border-neutral-700 hover:border-neutral-600 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                Keep Coding
+              </button>
+              <button
+                onClick={handleReturnToPractice}
+                className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 rounded-lg text-sm font-semibold text-black transition-all hover:scale-105 active:scale-95 shadow-lg shadow-emerald-900/40 cursor-pointer"
+              >
+                Return to Practice
               </button>
             </div>
           </div>

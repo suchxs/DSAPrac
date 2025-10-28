@@ -34,10 +34,20 @@ type TagProgress = {
   lastAnsweredAt?: string;
   answeredQuestions?: string[]; // Track individual question IDs
 };
+type PracticalProgress = {
+  completed: boolean;
+  completedAt?: string;
+  bestScore: number;
+  totalTests: number;
+  attempts: number;
+  lastAttemptAt?: string;
+  lastScore?: number;
+};
+
 type ProgressData = {
   version: number;
   theory: Record<string, TagProgress>;
-  practical: Record<string, { completed: boolean; completedAt?: string }>;
+  practical: Record<string, PracticalProgress>;
   activity: Record<string, number>; // YYYY-MM-DD -> count
 };
 
@@ -246,6 +256,39 @@ function countPracticalQuestions(): number {
   }
 
   return total;
+}
+
+function createDefaultPracticalProgress(totalTests = 0): PracticalProgress {
+  return {
+    completed: false,
+    completedAt: undefined,
+    bestScore: 0,
+    totalTests,
+    attempts: 0,
+    lastAttemptAt: undefined,
+    lastScore: undefined,
+  };
+}
+
+function ensurePracticalProgressEntry(
+  progress: ProgressData,
+  questionId: string,
+  totalTests = 0
+): PracticalProgress {
+  const existing = progress.practical[questionId];
+  if (!existing) {
+    const created = createDefaultPracticalProgress(totalTests);
+    progress.practical[questionId] = created;
+    return created;
+  }
+
+  if (typeof existing.bestScore !== 'number') existing.bestScore = 0;
+  if (typeof existing.totalTests !== 'number' || existing.totalTests < totalTests) {
+    existing.totalTests = totalTests;
+  }
+  if (typeof existing.attempts !== 'number') existing.attempts = 0;
+
+  return existing;
 }
 
 function handleBackendLine(line: string) {
@@ -516,6 +559,37 @@ function readProgress(): ProgressData {
     if (!fs.existsSync(file)) return defaultProgress();
     const raw = fs.readFileSync(file, 'utf-8');
     const parsed = JSON.parse(raw) as ProgressData;
+    if (!parsed.practical) {
+      parsed.practical = {};
+    }
+    for (const [questionId, entry] of Object.entries(parsed.practical)) {
+      const totalTests =
+        typeof entry.totalTests === 'number' ? entry.totalTests : 0;
+      let bestScore =
+        typeof entry.bestScore === 'number'
+          ? entry.bestScore
+          : entry.completed
+          ? totalTests
+          : 0;
+      if (bestScore > totalTests && totalTests > 0) {
+        bestScore = totalTests;
+      }
+      const normalized: PracticalProgress = {
+        completed: !!entry.completed,
+        completedAt: entry.completedAt,
+        bestScore,
+        totalTests,
+        attempts: typeof entry.attempts === 'number' ? entry.attempts : 0,
+        lastAttemptAt: entry.lastAttemptAt,
+        lastScore:
+          typeof entry.lastScore === 'number'
+            ? entry.lastScore
+            : entry.completed
+            ? totalTests
+            : undefined,
+      };
+      parsed.practical[questionId] = normalized;
+    }
     return parsed;
   } catch {
     return defaultProgress();
@@ -778,15 +852,28 @@ app.whenReady().then(() => {
     return p;
   });
 
-  ipcMain.handle('progress:setPracticalDone', (_evt, problemId: string, done: boolean) => {
-    const p = readProgress();
-    p.practical[problemId] = {
-      completed: !!done,
-      completedAt: done ? new Date().toISOString().slice(0, 10) : undefined,
-    };
-    if (done) recordActivity(p);
-    writeProgress(p);
-    return p;
+  ipcMain.handle('progress:setPracticalDone', (_evt, problemId: string, done: boolean, totalTests?: number) => {
+    const progress = readProgress();
+    const entry = ensurePracticalProgressEntry(progress, problemId, totalTests ?? 0);
+    entry.completed = !!done;
+    if (typeof totalTests === 'number' && totalTests > 0) {
+      entry.totalTests = Math.max(entry.totalTests, totalTests);
+    }
+
+    if (done) {
+      const today = new Date().toISOString().slice(0, 10);
+      entry.completedAt = today;
+      if (entry.totalTests > 0) {
+        entry.bestScore = Math.max(entry.bestScore, entry.totalTests);
+        entry.lastScore = entry.totalTests;
+      }
+      recordActivity(progress);
+    }
+
+    writeProgress(progress);
+    const counts = calculateQuestionCounts(progress);
+    broadcastDataRefresh({ counts, progress });
+    return progress;
   });
 
   ipcMain.handle('progress:recordActivity', (_evt, dateKey?: string) => {
@@ -2403,6 +2490,30 @@ app.whenReady().then(() => {
                   problemSolverWindow.on('closed', () => {
                     problemSolverWindow = null;
                     currentPracticalQuestion = null;
+
+                    try {
+                      const progress = readProgress();
+                      syncProgressTotals(progress);
+                      writeProgress(progress);
+                      const counts = calculateQuestionCounts(progress);
+                      broadcastDataRefresh({ counts, progress });
+                    } catch (err) {
+                      console.error(
+                        'Failed to refresh progress after closing practical window:',
+                        err
+                      );
+                    }
+
+                    if (mainWindow && !mainWindow.isDestroyed()) {
+                      try {
+                        mainWindow.focus();
+                      } catch (focusErr) {
+                        console.warn(
+                          'Unable to focus main window after closing practical window:',
+                          focusErr
+                        );
+                      }
+                    }
                   });
 
                   // F12 to toggle DevTools
@@ -2664,28 +2775,46 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('record-practical-activity', async (_event, payload: { questionId: string; points: number }) => {
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const progress = readProgress();
-      
-      // Add points to activity
-      if (!progress.activity[today]) {
-        progress.activity[today] = 0;
-      }
-      progress.activity[today] += payload.points;
+  ipcMain.handle(
+    'record-practical-activity',
+    async (
+      _event,
+      payload: { questionId: string; passedCount: number; totalCount: number; timestamp?: string }
+    ) => {
+      try {
+        const progress = readProgress();
+        const today =
+          payload.timestamp?.slice(0, 10) ?? new Date().toISOString().split('T')[0];
+        const passedCount = Math.max(0, payload.passedCount ?? 0);
+        const totalCount = Math.max(0, payload.totalCount ?? 0);
+        const activityIncrement = passedCount > 0 ? passedCount : 1;
 
-      // Mark question as having activity (could track completion differently)
-      if (!progress.practical[payload.questionId]) {
-        progress.practical[payload.questionId] = { completed: false };
-      }
+        progress.activity[today] = (progress.activity[today] ?? 0) + activityIncrement;
 
-      writeProgress(progress);
-    } catch (error) {
-      console.error('Failed to record practical activity:', error);
-      throw error;
+        const entry = ensurePracticalProgressEntry(progress, payload.questionId, totalCount);
+        if (totalCount > 0) {
+          entry.totalTests = Math.max(entry.totalTests, totalCount);
+        }
+        entry.attempts = (entry.attempts ?? 0) + 1;
+        entry.lastAttemptAt = today;
+        entry.lastScore = passedCount;
+        if (passedCount > entry.bestScore) {
+          entry.bestScore = passedCount;
+        }
+        if (entry.totalTests > 0 && entry.bestScore >= entry.totalTests) {
+          entry.completed = true;
+          entry.completedAt = entry.completedAt ?? today;
+        }
+
+        writeProgress(progress);
+        const counts = calculateQuestionCounts(progress);
+        broadcastDataRefresh({ counts, progress });
+      } catch (error) {
+        console.error('Failed to record practical activity:', error);
+        throw error;
+      }
     }
-  });
+  );
 
   // Window controls for custom title bar
   ipcMain.on('window-minimize', () => {
