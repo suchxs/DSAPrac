@@ -18,6 +18,13 @@ export interface ProgressData {
   activity: Record<string, number>;
 }
 
+export interface AppSettings {
+  autoSaveEnabled: boolean;
+  autoSaveInterval: number;
+  developerConsoleEnabled: boolean;
+  developerConsoleKey: string;
+}
+
 export interface QuestionCounts {
   theoretical: number;
   practical: number;
@@ -257,6 +264,7 @@ export interface ElectronAPI {
   stopTerminalExecution: (sessionId: string) => Promise<void>;
   onTerminalData: (callback: (data: TerminalDataPayload) => void) => () => void;
   onNavigate: (callback: (route: string) => void) => void;
+  onSettingsUpdated: (callback: (settings: AppSettings) => void) => () => void;
   onDataRefresh: (callback: (data: DataRefreshPayload) => void) => () => void;
   // Practical Problem Solver
   openPracticalProblem: (questionId: string) => void;
@@ -266,14 +274,15 @@ export interface ElectronAPI {
   runPracticalCode: (payload: any) => Promise<any>;
   submitPracticalSolution: (payload: any) => Promise<any>;
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
+  runDevConsoleCommand: (command: string) => Promise<{ ok: boolean; output: string[]; action?: string }>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
   windowClose: () => void;
   windowIsMaximized: () => Promise<boolean>;
   // Settings APIs
-  getSettings: () => Promise<any>;
-  saveSettings: (settings: any) => Promise<any>;
+  getSettings: () => Promise<AppSettings>;
+  saveSettings: (settings: Partial<AppSettings>) => Promise<AppSettings>;
 }
 
 const api: ElectronAPI = {
@@ -327,6 +336,11 @@ const api: ElectronAPI = {
   onNavigate: (callback: (route: string) => void) => {
     ipcRenderer.on('navigate', (_event, route) => callback(route));
   },
+  onSettingsUpdated: (callback: (settings: AppSettings) => void) => {
+    const listener = (_event: IpcRendererEvent, payload: AppSettings) => callback(payload);
+    ipcRenderer.on('settings:updated', listener);
+    return () => ipcRenderer.removeListener('settings:updated', listener);
+  },
   onDataRefresh: (callback: (data: DataRefreshPayload) => void) => {
     const listener = (_event: IpcRendererEvent, data: DataRefreshPayload) => {
       callback(data);
@@ -343,6 +357,7 @@ const api: ElectronAPI = {
   submitPracticalSolution: (payload) => ipcRenderer.invoke('submit-practical-solution', payload),
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) =>
     ipcRenderer.invoke('record-practical-activity', payload),
+  runDevConsoleCommand: (command: string) => ipcRenderer.invoke('devconsole:command', command),
   // Window controls
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),
@@ -350,7 +365,7 @@ const api: ElectronAPI = {
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
   // Settings APIs
   getSettings: () => ipcRenderer.invoke('settings:get'),
-  saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
+  saveSettings: (settings: Partial<AppSettings>) => ipcRenderer.invoke('settings:save', settings),
 };
 
 contextBridge.exposeInMainWorld('api', api);

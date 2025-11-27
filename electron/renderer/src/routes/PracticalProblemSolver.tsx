@@ -38,6 +38,7 @@ interface PracticalQuestion {
   testCases: TestCase[];
   imageDataUrl?: string | null;
   imageDataUrls?: string[];
+  initialFiles?: CodeFile[];
 }
 
 interface TestResult {
@@ -50,10 +51,13 @@ interface TestResult {
   error?: string;
 }
 
+const DEFAULT_ANSWER_CONTENT = '// Put your answer here\n';
+
 const PracticalProblemSolver: React.FC = () => {
   const [question, setQuestion] = useState<PracticalQuestion | null>(null);
   const [files, setFiles] = useState<CodeFile[]>([]); // Visible files for UI
   const [allFiles, setAllFiles] = useState<CodeFile[]>([]); // All files including hidden
+  const [initialFiles, setInitialFiles] = useState<CodeFile[]>([]); // Starting state for resets
   const [selectedFile, setSelectedFile] = useState<string>('');
   const [code, setCode] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -80,6 +84,7 @@ const PracticalProblemSolver: React.FC = () => {
   const [score, setScore] = useState(0);
   const [maxScore, setMaxScore] = useState(0);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [resetFileTarget, setResetFileTarget] = useState<CodeFile | null>(null);
   
   // Settings state
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
@@ -88,7 +93,7 @@ const PracticalProblemSolver: React.FC = () => {
   const isPendingCloseRef = useRef(false); // Flag to prevent saves when close modal is shown
 
   // Save function defined early for use in effects
-  const saveCurrentFile = () => {
+  const saveCurrentFile = async () => {
     // Don't save if:
     // - No file selected or no question loaded
     // - Already saving
@@ -102,12 +107,6 @@ const PracticalProblemSolver: React.FC = () => {
     setIsSaving(true);
     setHasUnsavedChanges(false);
     
-    // Quick visual feedback
-    setTimeout(() => {
-      setIsSaving(false);
-      isSavingRef.current = false;
-    }, 300);
-    
     // Get the latest file contents from ref
     const filesToSave = files.map((f) => {
       const latestContent = filesContentRef.current.get(f.filename);
@@ -118,12 +117,18 @@ const PracticalProblemSolver: React.FC = () => {
     });
     
     // Perform actual save in background (fire and forget)
-    window.api.savePracticalProgress({
-      questionId: question.id,
-      files: filesToSave,
-    }).catch((error) => {
+    try {
+      await window.api.savePracticalProgress({
+        questionId: question.id,
+        files: filesToSave,
+      });
+    } catch (error) {
       console.error('Failed to save progress:', error);
-    });
+      setHasUnsavedChanges(true);
+    } finally {
+      setIsSaving(false);
+      isSavingRef.current = false;
+    }
   };
 
   // Keep ref updated with latest save function
@@ -141,6 +146,7 @@ const PracticalProblemSolver: React.FC = () => {
       }
     };
     loadSettings();
+
   }, []);
 
   useEffect(() => {
@@ -182,7 +188,7 @@ const PracticalProblemSolver: React.FC = () => {
       periodicSaveTimerRef.current = setInterval(() => {
         // Use ref to call the latest save function and check conditions
         saveCurrentFileRef.current?.();
-      }, autoSaveInterval * 1000);
+      }, Math.max(200, Math.min(300000, autoSaveInterval * 1000)));
     }
 
     return () => {
@@ -202,14 +208,16 @@ const PracticalProblemSolver: React.FC = () => {
         return;
       }
       
-      if (window.terminalWrite) {
+      const writer = window.terminalWrite;
+
+      if (writer) {
         if (data.data) {
           console.log('[Frontend] Writing to terminal:', data.data);
-          window.terminalWrite(data.data);
+          writer(data.data);
         }
         if (data.error) {
           console.log('[Frontend] Writing error to terminal:', data.error);
-          window.terminalWrite(`\x1b[31m${data.error}\x1b[0m`);
+          writer(`\x1b[31m${data.error}\x1b[0m`);
         }
         if (data.exit) {
           console.log('[Frontend] Program exited with code:', data.exitCode);
@@ -219,11 +227,11 @@ const PracticalProblemSolver: React.FC = () => {
           const memoryUsage = data.memoryUsage || 0;
           const memoryMB = (memoryUsage / 1024).toFixed(2);
           
-          window.terminalWrite(`\r\n\r\n\x1b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\r\n`);
-          window.terminalWrite(`\x1b[32m✓ Process exited with code ${data.exitCode}\x1b[0m\r\n`);
-          window.terminalWrite(`\x1b[36m⏱  Execution Time: ${executionTime}ms\x1b[0m\r\n`);
-          window.terminalWrite(`\x1b[36m💾 Memory Usage: ${memoryMB}MB\x1b[0m\r\n`);
-          window.terminalWrite(`\x1b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\r\n`);
+          writer(`\r\n\r\n\x1b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\r\n`);
+          writer(`\x1b[32m✓ Process exited with code ${data.exitCode}\x1b[0m\r\n`);
+          writer(`\x1b[36m⏱  Execution Time: ${executionTime}ms\x1b[0m\r\n`);
+          writer(`\x1b[36m💾 Memory Usage: ${memoryMB}MB\x1b[0m\r\n`);
+          writer(`\x1b[90m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\r\n`);
           
           setIsTerminalRunning(false);
           setTerminalSessionId(null);
@@ -237,6 +245,13 @@ const PracticalProblemSolver: React.FC = () => {
       unsubscribe();
     };
   }, [terminalSessionId]);
+
+  // Clear terminal when opening modal to show fresh output
+  useEffect(() => {
+    if (showRunModal && window.terminalClear) {
+      window.terminalClear();
+    }
+  }, [showRunModal]);
 
   // Cleanup terminal session when modal closes
   useEffect(() => {
@@ -265,10 +280,22 @@ const PracticalProblemSolver: React.FC = () => {
       setMaxScore(Array.isArray(questionData.testCases) ? questionData.testCases.length : 0);
       setShowSuccessModal(false);
       
+      // Capture the starting state for each file (without student changes)
+      const initialFilesFromQuestion = (questionData.initialFiles ?? questionData.files).map((f: CodeFile) => {
+        if (f.isAnswerFile) {
+          const hasContent = f.content && f.content.trim().length > 0;
+          return {
+            ...f,
+            content: hasContent ? f.content : DEFAULT_ANSWER_CONTENT,
+          };
+        }
+        return { ...f };
+      });
+      setInitialFiles(initialFilesFromQuestion);
+      
       // Initialize ALL files (including hidden)
       // For answer files: use saved content if it exists (backend loads it), 
       // otherwise use default placeholder
-      const DEFAULT_ANSWER_CONTENT = '// Put your answer here\n';
       const allFilesWithContent = questionData.files.map((f: CodeFile) => {
         if (f.isAnswerFile) {
           // If the file has meaningful content (not empty or just whitespace), use it
@@ -334,36 +361,47 @@ const PracticalProblemSolver: React.FC = () => {
     setHasUnsavedChanges(true);
 
     // Debounce the state updates to reduce re-renders
+    // Update file in visible files state
+    setFiles((prevFiles) =>
+      prevFiles.map((f) =>
+        f.filename === currentFileRef.current ? { ...f, content: value } : f
+      )
+    );
+    
+    // Also update in all files state (for compilation)
+    setAllFiles((prevFiles) =>
+      prevFiles.map((f) =>
+        f.filename === currentFileRef.current ? { ...f, content: value } : f
+      )
+    );
+
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
     }
-    
-    autoSaveTimerRef.current = setTimeout(() => {
-      // Update file in visible files state
-      setFiles((prevFiles) =>
-        prevFiles.map((f) =>
-          f.filename === currentFileRef.current ? { ...f, content: value } : f
-        )
-      );
-      
-      // Also update in all files state (for compilation)
-      setAllFiles((prevFiles) =>
-        prevFiles.map((f) =>
-          f.filename === currentFileRef.current ? { ...f, content: value } : f
-        )
-      );
-      
-      // Auto-save
-      saveCurrentFile();
-    }, 2000);
+
+    // Auto-save only if enabled and honor the configured interval (clamped for sanity)
+    if (autoSaveEnabled) {
+      const debounceMs = Math.max(200, Math.min(300000, autoSaveInterval * 1000));
+      autoSaveTimerRef.current = setTimeout(() => {
+        saveCurrentFile();
+      }, debounceMs);
+    }
   };
 
-  const handleSave = () => {
-    saveCurrentFile();
+  const handleSave = async () => {
+    await saveCurrentFile();
   };
 
   const handleRun = async () => {
     if (!question) return;
+
+    setShowRunModal(true);
+    // Give the modal a moment to mount the terminal before streaming output
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    // Ensure latest code is saved to state and disk before running
+    await saveCurrentFile();
 
     const allFilesValid = allFiles.every(f => f.filename.trim() && f.content.trim());
     if (!allFilesValid) {
@@ -464,6 +502,8 @@ const PracticalProblemSolver: React.FC = () => {
     setIsTerminalRunning(false);
     inputBufferRef.current = ''; // Clear input buffer ref
     setInputBuffer(''); // Clear input buffer
+    // No external window now; nothing else to close
+    // reset flags
     
     // Clear terminal
     if (window.terminalClear) {
@@ -588,6 +628,7 @@ const PracticalProblemSolver: React.FC = () => {
     setShowAddFileModal(false);
     setFileNameError(null);
     setHasUnsavedChanges(true);
+    setInitialFiles((prev) => [...prev, newFile]);
   };
 
   const handleClose = () => {
@@ -631,6 +672,47 @@ const PracticalProblemSolver: React.FC = () => {
     setShowSuccessModal(false);
   };
 
+  const handleRequestResetFile = () => {
+    const current = files.find((f) => f.filename === selectedFile);
+    if (!current || current.isLocked) return;
+
+    const baseFile = initialFiles.find((f) => f.filename === current.filename);
+    if (!baseFile) return;
+
+    setResetFileTarget(baseFile);
+  };
+
+  const handleConfirmResetFile = () => {
+    if (!resetFileTarget) return;
+
+    const baseContent =
+      resetFileTarget.isAnswerFile && (!resetFileTarget.content || resetFileTarget.content.trim().length === 0)
+        ? DEFAULT_ANSWER_CONTENT
+        : resetFileTarget.content;
+
+    setFiles((prev) =>
+      prev.map((f) => (f.filename === resetFileTarget.filename ? { ...f, content: baseContent } : f))
+    );
+    setAllFiles((prev) =>
+      prev.map((f) => (f.filename === resetFileTarget.filename ? { ...f, content: baseContent } : f))
+    );
+    filesContentRef.current.set(resetFileTarget.filename, baseContent);
+
+    if (selectedFile === resetFileTarget.filename) {
+      setCode(baseContent);
+    }
+
+    setHasUnsavedChanges(true);
+    setResetFileTarget(null);
+
+    // Persist the reset as soon as possible
+    setTimeout(() => {
+      saveCurrentFileRef.current?.();
+    }, 0);
+  };
+
+  const handleCancelResetFile = () => setResetFileTarget(null);
+
   const getDifficultyColor = (difficulty: 'Easy' | 'Medium' | 'Hard') => {
     switch (difficulty) {
       case 'Easy':
@@ -655,6 +737,8 @@ const PracticalProblemSolver: React.FC = () => {
   const currentFile = files.find((f) => f.filename === selectedFile);
   const isReadOnly = currentFile?.isLocked || false;
   const displayedMaxScore = maxScore || (question.testCases?.length ?? 0);
+  const canResetCurrentFile =
+    !!currentFile && !currentFile.isLocked && initialFiles.some((f) => f.filename === currentFile.filename);
   const scorePercentage =
     displayedMaxScore > 0 ? Math.round((score / displayedMaxScore) * 100) : 0;
 
@@ -828,14 +912,24 @@ const PracticalProblemSolver: React.FC = () => {
 
           {/* Action Buttons */}
           <div className="h-12 bg-zinc-950 border-t border-zinc-800 flex items-center justify-between px-4">
-            <button
-              onClick={handleSave}
-              disabled={!hasUnsavedChanges || isSaving}
-              className="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors cursor-pointer"
-            >
-              <Save size={14} className={isSaving ? 'animate-pulse' : ''} />
-              {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save (Ctrl+S)' : 'Saved'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleRequestResetFile}
+                disabled={!canResetCurrentFile}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-red-900/60 text-red-100 hover:bg-red-800/70 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors cursor-pointer"
+              >
+                <X size={14} />
+                Reset File
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={!hasUnsavedChanges || isSaving}
+                className="flex items-center gap-2 px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed rounded transition-colors cursor-pointer"
+              >
+                <Save size={14} className={isSaving ? 'animate-pulse' : ''} />
+                {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save (Ctrl+S)' : 'Saved'}
+              </button>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleRun}
@@ -961,14 +1055,12 @@ const PracticalProblemSolver: React.FC = () => {
 
       {/* Run Code Modal with Interactive Terminal */}
       {showRunModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm">
-          <div className="w-full max-w-4xl rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-neutral-100 shadow-xl">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-6">
+          <div className="mt-10 w-full max-w-4xl rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-neutral-100 shadow-2xl">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold">Interactive Terminal</h2>
-                <p className="mt-1 text-sm text-neutral-400">
-                  Your program is running. Type input and press Enter when prompted.
-                </p>
+                <p className="text-xs text-neutral-500">Your program output appears below.</p>
               </div>
               <button
                 type="button"
@@ -978,21 +1070,52 @@ const PracticalProblemSolver: React.FC = () => {
                 Close
               </button>
             </div>
-            
-            <Terminal key="run-terminal" onData={handleTerminalData} />
-            
-            {isTerminalRunning && (
-              <div className="mt-3 flex items-center gap-2 text-xs text-neutral-500">
-                <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
-                <span>Program is running...</span>
+            <Terminal
+              onData={handleTerminalData}
+            />
+            <div className="text-xs text-neutral-500 flex items-center gap-2 mt-3">
+              <div className={`h-2 w-2 rounded-full ${isTerminalRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+              <span>{isTerminalRunning ? 'Program is running...' : 'Program has finished'}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset File Confirmation */}
+      {resetFileTarget && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-gradient-to-br from-zinc-900/95 to-zinc-800/95 border border-red-600/40 rounded-2xl p-8 w-[480px] shadow-2xl">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-500/15 flex items-center justify-center border border-red-500/30">
+                <svg className="w-6 h-6 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
               </div>
-            )}
-            {!isTerminalRunning && terminalSessionId === null && (
-              <div className="mt-3 flex items-center gap-2 text-xs text-neutral-500">
-                <div className="h-2 w-2 rounded-full bg-gray-500"></div>
-                <span>Program has finished</span>
+              <div className="flex-1">
+                <h2 className="text-xl font-bold mb-2 bg-gradient-to-r from-white to-zinc-300 bg-clip-text text-transparent">
+                  Reset {resetFileTarget.filename}?
+                </h2>
+                <p className="text-sm text-zinc-400 leading-relaxed">
+                  This will restore <span className="text-white font-semibold">{resetFileTarget.filename}</span> to its
+                  starting state. Only this file will be reset; other files stay unchanged.
+                </p>
               </div>
-            )}
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCancelResetFile}
+                className="px-6 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-600/50 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmResetFile}
+                className="px-6 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 shadow-lg shadow-red-900/30 cursor-pointer"
+              >
+                Reset File
+              </button>
+            </div>
           </div>
         </div>
       )}

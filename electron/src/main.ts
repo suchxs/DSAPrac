@@ -237,11 +237,15 @@ function getSettingsPath(): string {
 interface AppSettings {
   autoSaveEnabled: boolean;
   autoSaveInterval: number; // in seconds
+  developerConsoleEnabled: boolean;
+  developerConsoleKey: string;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
   autoSaveEnabled: true,
   autoSaveInterval: 30,
+  developerConsoleEnabled: false,
+  developerConsoleKey: '`',
 };
 
 function readSettings(): AppSettings {
@@ -835,18 +839,6 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
-
-  // F12 to toggle DevTools
-  mainWindow.webContents.on('before-input-event', (event, input) => {
-    if (input.key === 'F12') {
-      if (mainWindow && mainWindow.webContents.isDevToolsOpened()) {
-        mainWindow.webContents.closeDevTools();
-      } else if (mainWindow) {
-        mainWindow.webContents.openDevTools();
-      }
-      event.preventDefault();
-    }
-  });
 }
 
 // Single-window navigation - no longer needed with React Router
@@ -931,7 +923,62 @@ app.whenReady().then(() => {
     const currentSettings = readSettings();
     const newSettings = { ...currentSettings, ...partialSettings };
     writeSettings(newSettings);
+
+    // Broadcast settings change to all renderer windows
+    BrowserWindow.getAllWindows().forEach((win) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send('settings:updated', newSettings);
+      }
+    });
+
     return newSettings;
+  });
+
+  ipcMain.handle('devconsole:command', (_evt, rawCommand: string) => {
+    const command = (rawCommand || '').trim();
+    if (!command) {
+      return { ok: true, output: ['Ready. Type "help" for commands.'] };
+    }
+
+    const [cmd, ...args] = command.split(/\s+/);
+    const lc = cmd.toLowerCase();
+
+    switch (lc) {
+      case 'help':
+        return {
+          ok: true,
+          output: [
+            'Available commands:',
+            '  help                Show this help',
+            '  version             Show app version',
+            '  ping                Latency check',
+            '  backend             Show Rust judge status',
+            '  clear               Clear console output',
+          ],
+        };
+      case 'version':
+        return { ok: true, output: [`DSAPrac ${app.getVersion()}`] };
+      case 'ping':
+        return { ok: true, output: ['pong'] };
+      case 'backend': {
+        const running = !!backendProcess && !backendProcess.killed;
+        return {
+          ok: true,
+          output: [
+            running
+              ? 'Rust judge backend: running'
+              : 'Rust judge backend: not running',
+          ],
+        };
+      }
+      case 'clear':
+        return { ok: true, output: [], action: 'clear' };
+      default:
+        return {
+          ok: false,
+          output: [`Unknown command "${command}". Type "help" for a list.`],
+        };
+    }
   });
 
   // Progress IPC
@@ -2852,6 +2899,14 @@ app.whenReady().then(() => {
                       }))
                     : [];
 
+                  // Baseline state that mirrors a fresh session with no saved progress
+                  const initialFiles: CodeFilePayload[] = parsedFiles.map((pf: CodeFilePayload) => {
+                    if (pf.isAnswerFile) {
+                      return { ...pf, content: '' }; // Students start with an empty answer file
+                    }
+                    return { ...pf };
+                  });
+
                   const testCases: TestCasePayload[] = Array.isArray(data.test_cases)
                     ? data.test_cases.map((tc: any) => ({
                         input: typeof tc.input === 'string' ? tc.input : '',
@@ -2908,7 +2963,7 @@ app.whenReady().then(() => {
                   const progressDir = path.join(userDataDir, 'practical-progress');
                   const savedProgressFile = path.join(progressDir, `${id}.json`);
                   
-                  let filesWithProgress = parsedFiles;
+                  let filesWithProgress: CodeFilePayload[] = parsedFiles.map((pf: CodeFilePayload) => ({ ...pf }));
                   if (fs.existsSync(savedProgressFile)) {
                     try {
                       const savedFiles = JSON.parse(fs.readFileSync(savedProgressFile, 'utf-8'));
@@ -2944,6 +2999,7 @@ app.whenReady().then(() => {
                     author,
                     filePath,
                     files: filesWithProgress,
+                    initialFiles,
                     testCases,
                     imageDataUrl,
                     imageDataUrls: imageDataUrls.length > 0 ? imageDataUrls : undefined,
@@ -3021,18 +3077,6 @@ app.whenReady().then(() => {
                           focusErr
                         );
                       }
-                    }
-                  });
-
-                  // F12 to toggle DevTools
-                  problemSolverWindow.webContents.on('before-input-event', (event, input) => {
-                    if (input.key === 'F12') {
-                      if (problemSolverWindow && problemSolverWindow.webContents.isDevToolsOpened()) {
-                        problemSolverWindow.webContents.closeDevTools();
-                      } else if (problemSolverWindow) {
-                        problemSolverWindow.webContents.openDevTools();
-                      }
-                      event.preventDefault();
                     }
                   });
 

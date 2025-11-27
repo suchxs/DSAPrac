@@ -1,5 +1,5 @@
 import { HashRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import MainMenu from './routes/MainMenu';
 import PracticeMode from './routes/PracticeMode';
 import ExamConfig from './routes/ExamConfig';
@@ -12,6 +12,14 @@ import TheoryQuiz from './routes/TheoryQuiz';
 import Settings from './routes/Settings';
 import PracticalProblemSolver from './routes/PracticalProblemSolver';
 import TitleBar from './components/TitleBar';
+import DeveloperConsole from './components/DeveloperConsole';
+
+interface AppSettings {
+  autoSaveEnabled: boolean;
+  autoSaveInterval: number;
+  developerConsoleEnabled: boolean;
+  developerConsoleKey: string;
+}
 
 function NavigationHandler() {
   const navigate = useNavigate();
@@ -29,6 +37,33 @@ function NavigationHandler() {
 function AppContent() {
   const location = useLocation();
   const hideTitleBar = location.pathname === '/practical-problem-solver';
+  const [consoleEnabled, setConsoleEnabled] = useState(false);
+  const [consoleKey, setConsoleKey] = useState('`');
+
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await window.api.getSettings();
+        setConsoleEnabled(!!settings.developerConsoleEnabled);
+        setConsoleKey(settings.developerConsoleKey || '`');
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      }
+    };
+
+    loadSettings();
+
+    const unsubscribe = window.api.onSettingsUpdated?.((payload: AppSettings) => {
+      setConsoleEnabled(!!payload.developerConsoleEnabled);
+      setConsoleKey(payload.developerConsoleKey || '`');
+    });
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, []);
   
   return (
     <>
@@ -47,6 +82,7 @@ function AppContent() {
         <Route path="/question-maker/practical/library" element={<PracticalQuestionLibrary />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
+      <DeveloperConsole enabled={consoleEnabled} hotkey={consoleKey} />
     </>
   );
 }
