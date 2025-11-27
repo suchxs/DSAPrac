@@ -1,13 +1,14 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import crypto from 'node:crypto';
 
 let mainWindow: BrowserWindow | null = null;
 let problemSolverWindow: BrowserWindow | null = null;
 let currentPracticalQuestion: any = null;
 let backendProcess: ReturnType<typeof spawn> | null = null;
+type DevConsoleLevel = 'log' | 'warn' | 'error' | 'system';
 type PendingBackendRequest = {
   resolve: (value: any) => void;
   reject: (error: Error) => void;
@@ -16,6 +17,11 @@ type PendingBackendRequest = {
 const pendingBackendRequests = new Map<string, PendingBackendRequest>();
 let backendStdoutBuffer = '';
 let backendRequestCounter = 0;
+const consoleLevelMap: Record<number, DevConsoleLevel> = {
+  0: 'log',
+  1: 'warn',
+  2: 'error',
+};
 
 function resolveBackendPath(): string {
   const override = process.env.DSA_JUDGE_PATH;
@@ -446,6 +452,27 @@ function broadcastDataRefresh(payload: { counts: QuestionCounts; progress: Progr
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('data:refresh', payload);
   }
+}
+
+function sendDevConsoleLog(entry: { level: DevConsoleLevel; message: string; source?: string; line?: number }) {
+  BrowserWindow.getAllWindows().forEach((win) => {
+    if (!win.isDestroyed()) {
+      win.webContents.send('devconsole:log', entry);
+    }
+  });
+}
+
+function wireConsoleForwarding(win: BrowserWindow, label: string) {
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const resolvedLevel = consoleLevelMap[level] ?? 'log';
+    const source = sourceId ? `${label}:${sourceId}` : label;
+    sendDevConsoleLog({
+      level: resolvedLevel,
+      message: `[${label}] ${message}`,
+      source,
+      line,
+    });
+  });
 }
 
 function parseImageDataUrl(dataUrl: string): { buffer: Buffer; extension: string } {
@@ -899,6 +926,9 @@ app.whenReady().then(() => {
   
   startBackend();
   createWindow();
+  if (mainWindow) {
+    wireConsoleForwarding(mainWindow, 'main');
+  }
 
   ipcMain.on('app-exit', () => {
     app.quit();
@@ -3049,6 +3079,9 @@ app.whenReady().then(() => {
                       hash: '/practical-problem-solver',
                     });
                   }
+                  if (problemSolverWindow) {
+                    wireConsoleForwarding(problemSolverWindow, 'practical');
+                  }
 
                   // Clean up when window is closed
                   problemSolverWindow.on('closed', () => {
@@ -3256,122 +3289,220 @@ app.whenReady().then(() => {
 
   ipcMain.handle('submit-practical-solution', async (_event, payload: { questionId: string; files: any[]; testCases: any[] }) => {
     try {
+      const language = payload.files[0]?.language === 'cpp' ? 'cpp' : 'c';
+
+      // Prepare files similar to terminal execution (unbuffer stdout/stderr/stdin)
+      const preparedFiles = payload.files.map((file: any) => {
+        let content = file.content;
+        if (file.filename.toLowerCase().includes('main') || payload.files.length === 1) {
+          content = content.replace(
+            /int\s+main\s*\([^)]*\)\s*\{/,
+            (match: string) => {
+              const unbufferSnippet =
+                language === 'c'
+                  ? '\n    setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); setvbuf(stdin, NULL, _IONBF, 0);'
+                  : '\n    std::setvbuf(stdout, NULL, _IONBF, 0); std::setvbuf(stderr, NULL, _IONBF, 0); std::setvbuf(stdin, NULL, _IONBF, 0);';
+              return match + unbufferSnippet;
+            }
+          );
+        }
+        return { filename: file.filename, content };
+      });
+
+      interface CompileResult {
+        success: boolean;
+        executable_path?: string;
+        error?: string;
+        compile_time_ms: number;
+      }
+
+      // Compile using the Rust backend for consistency with the terminal
+      const compileResult = await sendBackendCommand<CompileResult>(
+        'execute',
+        { language, files: preparedFiles },
+        30000
+      );
+
+      if (!compileResult.success || !compileResult.executable_path) {
+        throw new Error(compileResult.error || 'Compilation failed');
+      }
+
+      const executablePath = compileResult.executable_path;
+      const execDir = path.dirname(executablePath);
       const testResults: any[] = [];
-      const tempDir = path.join(app.getPath('temp'), `dsa-submit-${Date.now()}`);
-      ensureDirExists(tempDir);
 
-      try {
-        // Write all code files to temp directory
-        for (const file of payload.files) {
-          const filePath = path.join(tempDir, file.filename);
-          fs.writeFileSync(filePath, file.content, 'utf-8');
-        }
-
-        // Compile once
-        const language = payload.files[0].language;
-        const executableName = 'program.exe';
-        const compiler = language === 'cpp' ? 'g++' : 'gcc';
-        const sourceFiles = payload.files
-          .filter((f: any) => !f.filename.match(/\.(h|hpp)$/i))
-          .map((f: any) => f.filename);
-
-        const compileArgs = [...sourceFiles, '-o', executableName];
-
-        const compileResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
-          const compileProcess = spawn(compiler, compileArgs, { cwd: tempDir });
-          let compileError = '';
-
-          compileProcess.stderr.on('data', (data) => {
-            compileError += data.toString();
-          });
-
-          compileProcess.on('close', (code) => {
-            if (code !== 0) {
-              resolve({ success: false, error: compileError });
-            } else {
-              resolve({ success: true });
+      const runTestCase = (input: string) =>
+        new Promise<{
+          output: string;
+          error: string;
+          exitCode: number;
+          executionTime: number;
+          memoryUsage: number;
+        }>((resolve) => {
+          const pollMemory = (pid?: number | null) => {
+            if (!pid || process.platform !== 'win32') return 0;
+            try {
+              const tasklist = execSync(
+                `tasklist /FI "PID eq ${pid}" /FO CSV /NH`,
+                { encoding: 'utf8' }
+              );
+              const match = tasklist.match(/"([0-9,]+) K"/);
+              if (match) {
+                const mem = parseInt(match[1].replace(/,/g, ''), 10);
+                if (!Number.isNaN(mem)) {
+                  return mem;
+                }
+              }
+            } catch {
+              // ignore
             }
-          });
-        });
+            return 0;
+          };
 
-        if (!compileResult.success) {
-          throw new Error(`Compilation failed:\n${compileResult.error}`);
-        }
+          const start = Date.now();
+          let output = '';
+          let error = '';
+          let peakMemoryKB = 0;
+          const runProcess = spawn(executablePath, [], { cwd: execDir });
 
-        // Run each test case - use same approach as Rust backend judge
-        const executablePath = path.join(tempDir, executableName);
-        
-        for (let i = 0; i < payload.testCases.length; i++) {
-          const testCase = payload.testCases[i];
-          
-          try {
-            const runResult = await new Promise<{ output: string; error: string }>((resolve) => {
-              const runProcess = spawn(executablePath, [], { cwd: tempDir });
-              let output = '';
-              let error = '';
-
-              runProcess.stdout.on('data', (data) => {
-                output += data.toString();
-              });
-
-              runProcess.stderr.on('data', (data) => {
-                error += data.toString();
-              });
-
-              runProcess.on('close', () => {
-                resolve({ output, error });
-              });
-
-              // Send test case input to stdin
-              runProcess.stdin.write(testCase.input);
-              runProcess.stdin.end();
-            });
-
-            // Simulate terminal echo behavior to match recorded output
-            let actualOutput = runResult.output;
-            const inputText = testCase.input.replace(/\n$/, ''); // Remove trailing \n from input
-            
-            // Find where to insert the input - look for \r\n sequence (Windows line ending)
-            const crlfIndex = actualOutput.indexOf('\r\n');
-            
-            if (crlfIndex !== -1 && inputText.length > 0) {
-              // Insert the input + "\n\r\n" before the program's \r\n
-              // Original: "Enter a string: \r\n\nYou entered: tenten\n"
-              // Insert "tenten\n\r\n" before the first \r\n
-              // Result: "Enter a string: tenten\n\r\n\nYou entered: tenten\n"
-              actualOutput = 
-                actualOutput.substring(0, crlfIndex) + 
-                inputText + '\n\r\n' + 
-                actualOutput.substring(crlfIndex + 2); // Skip the original \r\n
-            }
-            
-            const expectedOutput = testCase.expectedOutput.trim();
-            const passed = actualOutput.trim() === expectedOutput;
-
-            testResults.push({
-              index: i,
-              passed,
-              actualOutput: actualOutput.trim(),
-              expectedOutput,
-            });
-          } catch (error: any) {
-            testResults.push({
-              index: i,
-              passed: false,
-              error: error.message || 'Execution failed',
+          // Ignore stdin pipe errors from programs that exit before reading input
+          if (runProcess.stdin) {
+            runProcess.stdin.on('error', (err) => {
+              console.warn('[submit] stdin error:', err?.message ?? err);
             });
           }
-        }
+          let exited = false;
 
-        return { testResults };
-      } finally {
-        // Clean up temp directory
+          // Capture an initial sample in case the process exits quickly
+          peakMemoryKB = Math.max(peakMemoryKB, pollMemory(runProcess.pid));
+
+          // Sample memory similar to the terminal view
+          const memoryPoller =
+            process.platform === 'win32' && runProcess.pid
+              ? setInterval(() => {
+                  const mem = pollMemory(runProcess.pid);
+                  if (mem > 0) {
+                    peakMemoryKB = Math.max(peakMemoryKB, mem);
+                  }
+                }, 50)
+              : null;
+
+          let settled = false;
+          const finalize = (result: { output: string; error: string; exitCode: number }) => {
+            if (settled) return;
+            settled = true;
+            exited = true;
+            // One last sample right before finishing
+            const finalMem = pollMemory(runProcess.pid);
+            if (finalMem > 0) {
+              peakMemoryKB = Math.max(peakMemoryKB, finalMem);
+            }
+            if (memoryPoller) {
+              clearInterval(memoryPoller);
+            }
+            clearTimeout(timeoutHandle);
+            resolve({
+              ...result,
+              executionTime: Date.now() - start,
+              memoryUsage: peakMemoryKB,
+            });
+          };
+
+          const timeoutHandle = setTimeout(() => {
+            runProcess.kill();
+            finalize({
+              output,
+              error: 'Execution timeout (10 seconds)',
+              exitCode: -1,
+            });
+          }, 10000);
+
+          runProcess.stdout?.on('data', (data) => {
+            output += data.toString();
+          });
+
+          runProcess.stderr?.on('data', (data) => {
+            error += data.toString();
+          });
+
+          runProcess.on('close', (code) => {
+            finalize({ output, error, exitCode: code ?? 0 });
+          });
+
+          runProcess.on('error', (err) => {
+            finalize({ output, error: err.message, exitCode: -1 });
+          });
+
+          if (input) {
+            try {
+              if (runProcess.stdin && !runProcess.stdin.destroyed) {
+                runProcess.stdin.write(input, (err) => {
+                  if (err && !exited) {
+                    console.warn('[submit] stdin write failed:', err.message);
+                  }
+                });
+              }
+            } catch (e: any) {
+              console.warn('[submit] stdin write exception:', e?.message ?? e);
+            }
+          }
+          try {
+            if (runProcess.stdin && !runProcess.stdin.destroyed) {
+              runProcess.stdin.end();
+            }
+          } catch (e: any) {
+            if (!exited) {
+              console.warn('[submit] stdin end exception:', e?.message ?? e);
+            }
+          }
+        });
+
+      for (let i = 0; i < payload.testCases.length; i++) {
+        const testCase = payload.testCases[i];
+
         try {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        } catch (err) {
-          console.warn('Failed to clean up temp directory:', err);
+          const runResult = await runTestCase(testCase.input);
+
+          // Simulate terminal echo behavior to match recorded output
+          let actualOutput = runResult.output;
+          const inputText = (testCase.input || '').replace(/\n$/, '');
+          const crlfIndex = actualOutput.indexOf('\r\n');
+
+          if (crlfIndex !== -1 && inputText.length > 0) {
+            actualOutput =
+              actualOutput.substring(0, crlfIndex) +
+              inputText +
+              '\n\r\n' +
+              actualOutput.substring(crlfIndex + 2);
+          }
+
+          const expectedOutput = (testCase.expectedOutput || '').trim();
+          const passed = actualOutput.trim() === expectedOutput;
+
+          testResults.push({
+            index: i,
+            passed: passed && runResult.exitCode === 0,
+            actualOutput: actualOutput.trim(),
+            expectedOutput,
+            executionTime: runResult.executionTime,
+            memoryUsage: runResult.memoryUsage,
+            error:
+              runResult.exitCode === 0
+                ? undefined
+                : runResult.error || `Program exited with code ${runResult.exitCode}`,
+          });
+        } catch (error: any) {
+          testResults.push({
+            index: i,
+            passed: false,
+            error: error.message || 'Execution failed',
+            executionTime: 0,
+            memoryUsage: 0,
+          });
         }
       }
+
+      return { testResults };
     } catch (error: any) {
       throw new Error(`Submission failed: ${error.message}`);
     }

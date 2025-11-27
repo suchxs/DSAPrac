@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Editor } from '@monaco-editor/react';
 import { Play, Send, Save, X, ArrowLeft } from 'lucide-react';
 import Terminal from '../components/Terminal';
@@ -52,6 +53,18 @@ interface TestResult {
 }
 
 const DEFAULT_ANSWER_CONTENT = '// Put your answer here\n';
+const TIMER_STORAGE_PREFIX = 'practical-timer-';
+const RESULTS_STORAGE_PREFIX = 'practical-results-';
+const formatElapsed = (ms: number) => {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60)
+    .toString()
+    .padStart(2, '0');
+  const seconds = Math.floor(totalSeconds % 60)
+    .toString()
+    .padStart(2, '0');
+  return `${minutes}:${seconds}`;
+};
 
 const PracticalProblemSolver: React.FC = () => {
   const [question, setQuestion] = useState<PracticalQuestion | null>(null);
@@ -85,6 +98,16 @@ const PracticalProblemSolver: React.FC = () => {
   const [maxScore, setMaxScore] = useState(0);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [resetFileTarget, setResetFileTarget] = useState<CodeFile | null>(null);
+  const [useExternalTerminal, setUseExternalTerminal] = useState(true);
+  const externalWindowRef = useRef<Window | null>(null);
+  const externalContainerRef = useRef<HTMLDivElement | null>(null);
+  const terminalWriteRef = useRef<((data: string) => void) | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const timerStartRef = useRef<number | null>(null);
+  const baseElapsedRef = useRef<number>(0);
+  const [avgExecMs, setAvgExecMs] = useState<number | null>(null);
+  const [avgMemKb, setAvgMemKb] = useState<number | null>(null);
   
   // Settings state
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
@@ -122,6 +145,10 @@ const PracticalProblemSolver: React.FC = () => {
         questionId: question.id,
         files: filesToSave,
       });
+      // Persist timer on explicit save
+      const key = `${TIMER_STORAGE_PREFIX}${question.id}`;
+      const currentElapsed = getCurrentElapsedMs();
+      localStorage.setItem(key, JSON.stringify({ elapsedMs: currentElapsed, updatedAt: Date.now() }));
     } catch (error) {
       console.error('Failed to save progress:', error);
       setHasUnsavedChanges(true);
@@ -133,6 +160,36 @@ const PracticalProblemSolver: React.FC = () => {
 
   // Keep ref updated with latest save function
   saveCurrentFileRef.current = saveCurrentFile;
+
+  const getCurrentElapsedMs = () => {
+    if (timerStartRef.current) {
+      return baseElapsedRef.current + (Date.now() - timerStartRef.current);
+    }
+    return baseElapsedRef.current;
+  };
+
+  const startTimer = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+    timerStartRef.current = Date.now();
+    timerIntervalRef.current = setInterval(() => {
+      setElapsedMs(getCurrentElapsedMs());
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (timerStartRef.current) {
+      const delta = Date.now() - timerStartRef.current;
+      baseElapsedRef.current += delta;
+      setElapsedMs(baseElapsedRef.current);
+      timerStartRef.current = null;
+    }
+  };
 
   // Load settings on mount
   useEffect(() => {
@@ -146,7 +203,6 @@ const PracticalProblemSolver: React.FC = () => {
       }
     };
     loadSettings();
-
   }, []);
 
   useEffect(() => {
@@ -208,7 +264,7 @@ const PracticalProblemSolver: React.FC = () => {
         return;
       }
       
-      const writer = window.terminalWrite;
+      const writer = terminalWriteRef.current || window.terminalWrite;
 
       if (writer) {
         if (data.data) {
@@ -246,13 +302,6 @@ const PracticalProblemSolver: React.FC = () => {
     };
   }, [terminalSessionId]);
 
-  // Clear terminal when opening modal to show fresh output
-  useEffect(() => {
-    if (showRunModal && window.terminalClear) {
-      window.terminalClear();
-    }
-  }, [showRunModal]);
-
   // Cleanup terminal session when modal closes
   useEffect(() => {
     if (!showRunModal && terminalSessionId) {
@@ -263,8 +312,16 @@ const PracticalProblemSolver: React.FC = () => {
     }
   }, [showRunModal, terminalSessionId]);
 
+  // Stop timer on unmount
+  useEffect(() => {
+    return () => {
+      stopTimer();
+    };
+  }, []);
+
   const loadQuestion = async () => {
     try {
+      stopTimer();
       console.log('Loading question...');
       // Get question data from window opener or IPC
       const questionData = await window.api.getCurrentPracticalQuestion();
@@ -276,8 +333,6 @@ const PracticalProblemSolver: React.FC = () => {
       }
       
       setQuestion(questionData);
-      setScore(0);
-      setMaxScore(Array.isArray(questionData.testCases) ? questionData.testCases.length : 0);
       setShowSuccessModal(false);
       
       // Capture the starting state for each file (without student changes)
@@ -317,6 +372,60 @@ const PracticalProblemSolver: React.FC = () => {
       console.log('Visible files:', visibleFiles);
       console.log('All files (including hidden):', allFilesWithContent);
       setFiles(visibleFiles);
+      setTestResults([]);
+      setScore(0);
+      setMaxScore(Array.isArray(questionData.testCases) ? questionData.testCases.length : 0);
+      setAvgExecMs(null);
+      setAvgMemKb(null);
+
+      // Load persisted timer
+      const key = `${TIMER_STORAGE_PREFIX}${questionData.id}`;
+      try {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (parsed && typeof parsed.elapsedMs === 'number') {
+            baseElapsedRef.current = parsed.elapsedMs;
+            setElapsedMs(parsed.elapsedMs);
+          }
+        } else {
+          baseElapsedRef.current = 0;
+          setElapsedMs(0);
+        }
+      } catch (e) {
+        console.warn('Failed to load timer state', e);
+        baseElapsedRef.current = 0;
+        setElapsedMs(0);
+      }
+      startTimer();
+
+      // Restore last submission results if they exist
+      const resultsKey = `${RESULTS_STORAGE_PREFIX}${questionData.id}`;
+      try {
+        const storedResultsRaw = localStorage.getItem(resultsKey);
+        if (storedResultsRaw) {
+          const stored = JSON.parse(storedResultsRaw);
+          if (stored && Array.isArray(stored.testResults)) {
+            setTestResults(stored.testResults);
+            setScore(typeof stored.score === 'number' ? stored.score : 0);
+            setMaxScore(
+              typeof stored.maxScore === 'number'
+                ? stored.maxScore
+                : Array.isArray(questionData.testCases)
+                ? questionData.testCases.length
+                : 0
+            );
+            setAvgExecMs(
+              typeof stored.avgExecMs === 'number' ? stored.avgExecMs : null
+            );
+            setAvgMemKb(
+              typeof stored.avgMemKb === 'number' ? stored.avgMemKb : null
+            );
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to restore submission results', e);
+      }
       
       // Select first editable file (answer file)
       const firstAnswerFile = visibleFiles.find((f: CodeFile) => f.isAnswerFile);
@@ -396,9 +505,43 @@ const PracticalProblemSolver: React.FC = () => {
   const handleRun = async () => {
     if (!question) return;
 
-    setShowRunModal(true);
-    // Give the modal a moment to mount the terminal before streaming output
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Try to use external window; fallback to inline if blocked
+    if (useExternalTerminal) {
+      if (!externalContainerRef.current) {
+        externalContainerRef.current = document.createElement('div');
+      }
+      const win = externalWindowRef.current && !externalWindowRef.current.closed
+        ? externalWindowRef.current
+        : window.open('', 'DSAPrac-Terminal', 'width=1100,height=650,left=150,top=120,resizable=yes');
+      if (win) {
+        externalWindowRef.current = win;
+        win.document.title = 'DSAPrac Terminal';
+        win.document.body.innerHTML = '';
+        win.document.body.style.margin = '0';
+        win.document.body.style.backgroundColor = '#0a0a0a';
+        win.document.body.style.color = '#e5e5e5';
+        win.document.body.appendChild(externalContainerRef.current);
+        win.document.head.innerHTML = '';
+        document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+          win.document.head.appendChild(node.cloneNode(true));
+        });
+        const handleExternalClose = () => {
+          terminalWriteRef.current = null;
+          externalWindowRef.current = null;
+          setShowRunModal(false);
+          setUseExternalTerminal(true);
+        };
+        win.addEventListener('beforeunload', handleExternalClose, { once: true });
+        setShowRunModal(true);
+      } else {
+        setUseExternalTerminal(false);
+        setShowRunModal(true);
+      }
+    } else {
+      setShowRunModal(true);
+      // Give the modal a moment to mount the terminal before streaming output
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
 
     // Ensure latest code is saved to state and disk before running
     await saveCurrentFile();
@@ -499,16 +642,20 @@ const PracticalProblemSolver: React.FC = () => {
     
     setShowRunModal(false);
     setTerminalSessionId(null);
-    setIsTerminalRunning(false);
-    inputBufferRef.current = ''; // Clear input buffer ref
-    setInputBuffer(''); // Clear input buffer
-    // No external window now; nothing else to close
-    // reset flags
+      setIsTerminalRunning(false);
+      inputBufferRef.current = ''; // Clear input buffer ref
+      setInputBuffer(''); // Clear input buffer
+    if (externalWindowRef.current && !externalWindowRef.current.closed) {
+      externalWindowRef.current.close();
+      externalWindowRef.current = null;
+    }
+    setUseExternalTerminal(true);
     
     // Clear terminal
     if (window.terminalClear) {
       window.terminalClear();
     }
+    stopTimer();
   };
 
   const handleSubmit = async () => {
@@ -518,6 +665,8 @@ const PracticalProblemSolver: React.FC = () => {
     setRunOutput('');
     setTestResults([]);
     setShowSuccessModal(false);
+    // Persist latest edits before judging
+    await saveCurrentFile();
 
     try {
       // Use ALL files including hidden ones for compilation
@@ -538,6 +687,35 @@ const PracticalProblemSolver: React.FC = () => {
       setScore(passedCount);
       setMaxScore(totalTests);
 
+      // Compute averages
+      let avgExec = 0;
+      let avgMem = 0;
+      if (results.testResults && results.testResults.length > 0) {
+        const execVals = results.testResults.map((r) => r.executionTime || 0);
+        const memVals = results.testResults.map((r) => r.memoryUsage || 0);
+        avgExec = execVals.reduce((a, b) => a + b, 0) / execVals.length;
+        avgMem = memVals.reduce((a, b) => a + b, 0) / memVals.length;
+      }
+      setAvgExecMs(avgExec);
+      setAvgMemKb(avgMem);
+      const allPassed = totalTests > 0 && passedCount === totalTests;
+
+      // Persist latest results for restoration on reopen
+      try {
+        localStorage.setItem(
+          `${RESULTS_STORAGE_PREFIX}${question.id}`,
+          JSON.stringify({
+            testResults: results.testResults || [],
+            score: passedCount,
+            maxScore: totalTests,
+            avgExecMs: avgExec,
+            avgMemKb: avgMem,
+          })
+        );
+      } catch (e) {
+        console.warn('Failed to persist submission results', e);
+      }
+
       await window.api.recordPracticalActivity({
         questionId: question.id,
         passedCount,
@@ -545,8 +723,9 @@ const PracticalProblemSolver: React.FC = () => {
         timestamp: new Date().toISOString(),
       });
 
-      if (totalTests > 0 && passedCount === totalTests) {
+      if (allPassed) {
         await window.api.setPracticalDone(question.id, true, totalTests);
+        setRunOutput(`All tests passed. Avg ⏱ ${avgExec.toFixed(2)} ms • Avg 💾 ${(avgMem / 1024).toFixed(2)} MB`);
         setShowSuccessModal(true);
       }
 
@@ -930,7 +1109,10 @@ const PracticalProblemSolver: React.FC = () => {
                 {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save (Ctrl+S)' : 'Saved'}
               </button>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-4 items-center">
+              <div className="text-xs text-neutral-400 font-mono px-3 py-1 rounded bg-zinc-900 border border-zinc-800">
+                Time: {formatElapsed(getCurrentElapsedMs())}
+              </div>
               <button
                 onClick={handleRun}
                 disabled={isTerminalRunning || isSubmitting}
@@ -971,7 +1153,7 @@ const PracticalProblemSolver: React.FC = () => {
             </div>
 
             <h3 className="text-sm font-semibold mb-3">Test Cases</h3>
-            <div className="space-y-3">
+            <div className="flex flex-col gap-4">
               {question.testCases.map((tc, index) => {
                 if (tc.isHidden && testResults.length === 0) {
                   return (
@@ -990,11 +1172,11 @@ const PracticalProblemSolver: React.FC = () => {
                 const result = testResults.find((r) => r.index === index);
 
                 return (
-                  <div
-                    key={index}
-                    className={`p-3 rounded border text-xs ${
-                      result
-                        ? result.passed
+                    <div
+                      key={index}
+                      className={`p-3 rounded border text-xs ${
+                        result
+                          ? result.passed
                           ? 'bg-green-950/30 border-green-800'
                           : 'bg-red-950/30 border-red-800'
                         : 'bg-zinc-900 border-zinc-800'
@@ -1026,6 +1208,16 @@ const PracticalProblemSolver: React.FC = () => {
                         </div>
                       </>
                     )}
+                    {result && !tc.isHidden && (
+                      <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-neutral-400">
+                        <span className="px-2 py-1 rounded bg-zinc-900 border border-zinc-800">
+                          ⏱ {result.executionTime !== undefined ? `${result.executionTime} ms` : '0 ms'}
+                        </span>
+                        <span className="px-2 py-1 rounded bg-zinc-900 border border-zinc-800">
+                          💾 {result.memoryUsage !== undefined ? `${(result.memoryUsage / 1024).toFixed(2)} MB` : '0.00 MB'}
+                        </span>
+                      </div>
+                    )}
                     {result && !result.passed && result.actualOutput && (
                       <div>
                         <div className="text-zinc-400 mb-0.5">Actual Output:</div>
@@ -1054,24 +1246,39 @@ const PracticalProblemSolver: React.FC = () => {
       </div>
 
       {/* Run Code Modal with Interactive Terminal */}
-      {showRunModal && (
+      {showRunModal && useExternalTerminal && externalContainerRef.current && externalWindowRef.current && !externalWindowRef.current.closed && createPortal(
+        <div className="w-full h-full bg-neutral-900 text-neutral-100 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">Terminal</h2>
+            </div>
+          </div>
+          <Terminal
+            onData={handleTerminalData}
+            onReady={(api) => {
+              terminalWriteRef.current = api.write;
+            }}
+          />
+          <div className="text-xs text-neutral-500 flex items-center gap-2 mt-2">
+            <div className={`h-2 w-2 rounded-full ${isTerminalRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+            <span>{isTerminalRunning ? 'Program is running...' : 'Program has finished'}</span>
+          </div>
+        </div>,
+        externalContainerRef.current
+      )}
+      {showRunModal && (!useExternalTerminal || !externalContainerRef.current || !externalWindowRef.current || externalWindowRef.current.closed) && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 px-6">
-          <div className="mt-10 w-full max-w-4xl rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-neutral-100 shadow-2xl">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-semibold">Interactive Terminal</h2>
-                <p className="text-xs text-neutral-500">Your program output appears below.</p>
-              </div>
-              <button
-                type="button"
-                onClick={handleCloseRunModal}
-                className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-800 cursor-pointer"
-              >
-                Close
-              </button>
+        <div className="mt-10 w-full max-w-4xl rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-neutral-100 shadow-2xl">
+           <div className="mb-4 flex items-center justify-between">
+             <div>
+               <h2 className="text-xl font-semibold">Terminal</h2>
+             </div>
             </div>
             <Terminal
               onData={handleTerminalData}
+              onReady={(api) => {
+                terminalWriteRef.current = api.write;
+              }}
             />
             <div className="text-xs text-neutral-500 flex items-center gap-2 mt-3">
               <div className={`h-2 w-2 rounded-full ${isTerminalRunning ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
@@ -1199,24 +1406,31 @@ const PracticalProblemSolver: React.FC = () => {
                 <p className="mt-1 text-sm text-neutral-400">
                   All {displayedMaxScore} test cases passed. Perfect score achieved.
                 </p>
+                {avgExecMs !== null && avgMemKb !== null && (
+                  <p className="mt-2 text-sm text-emerald-300">
+                    Avg ⏱ {avgExecMs.toFixed(2)} ms • Avg 💾 {(avgMemKb / 1024).toFixed(2)} MB
+                  </p>
+                )}
                 <p className="mt-2 text-xs uppercase tracking-wide text-emerald-400">
                   100% Score - {displayedMaxScore} pts earned
                 </p>
               </div>
             </div>
             <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={handleRetrySubmission}
-                className="px-5 py-2.5 bg-neutral-900 border border-neutral-700 hover:border-neutral-600 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 cursor-pointer"
-              >
-                Keep Coding
-              </button>
-              <button
-                onClick={handleReturnToPractice}
-                className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 rounded-lg text-sm font-semibold text-black transition-all hover:scale-105 active:scale-95 shadow-lg shadow-emerald-900/40 cursor-pointer"
-              >
-                Return to Practice
-              </button>
+              <div className="flex justify-center gap-3 w-full">
+                <button
+                  onClick={handleRetrySubmission}
+                  className="px-5 py-2.5 bg-neutral-900 border border-neutral-700 hover:border-neutral-600 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                >
+                  Keep Coding
+                </button>
+                <button
+                  onClick={handleReturnToPractice}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 rounded-lg text-sm font-semibold text-black transition-all hover:scale-105 active:scale-95 shadow-lg shadow-emerald-900/40 cursor-pointer"
+                >
+                  Return to Practice
+                </button>
+              </div>
             </div>
           </div>
         </div>

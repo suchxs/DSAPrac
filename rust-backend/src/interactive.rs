@@ -78,8 +78,8 @@ pub async fn compile_files(files: Vec<CodeFile>, language: &str) -> Result<Compi
     
     // Determine compiler and source files
     let compiler = match language {
-        "c" => ("gcc", "c"),
-        "cpp" => ("g++", "cpp"),
+        "c" => "gcc",
+        "cpp" => "g++",
         _ => return Err(anyhow::anyhow!("Unsupported language: {}", language)),
     };
     

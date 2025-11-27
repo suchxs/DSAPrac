@@ -275,6 +275,7 @@ export interface ElectronAPI {
   submitPracticalSolution: (payload: any) => Promise<any>;
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
   runDevConsoleCommand: (command: string) => Promise<{ ok: boolean; output: string[]; action?: string }>;
+  onDevConsoleLog: (callback: (entry: { level: string; message: string; source?: string; line?: number }) => void) => () => void;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -358,6 +359,11 @@ const api: ElectronAPI = {
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) =>
     ipcRenderer.invoke('record-practical-activity', payload),
   runDevConsoleCommand: (command: string) => ipcRenderer.invoke('devconsole:command', command),
+  onDevConsoleLog: (callback: (entry: { level: string; message: string; source?: string; line?: number }) => void) => {
+    const listener = (_event: IpcRendererEvent, entry: any) => callback(entry);
+    ipcRenderer.on('devconsole:log', listener);
+    return () => ipcRenderer.removeListener('devconsole:log', listener);
+  },
   // Window controls
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),

@@ -20,14 +20,14 @@
       "input": "tenten",
       "expected_output": "Enter a string: tenten\n\r\nYou entered: tenten",
       "is_hidden": false,
-      "execution_time": 29,
+      "execution_time": 53,
       "memory_usage": 0
     },
     {
       "input": "qwrqwr",
       "expected_output": "Enter a string: qwrqwr\n\r\nYou entered: qwrqwr",
       "is_hidden": false,
-      "execution_time": 20,
+      "execution_time": 19,
       "memory_usage": 0
     },
     {
@@ -36,9 +36,20 @@
       "is_hidden": false,
       "execution_time": 18,
       "memory_usage": 0
+    },
+    {
+      "input": "ripbozo",
+      "expected_output": "Enter a string: ripbozo\n\r\nYou entered: ripbozo",
+      "is_hidden": true,
+      "execution_time": 19,
+      "memory_usage": 0
     }
   ],
-  "image": "practical-1761414967993-a1d13f61.jpg",
+  "image": "practical-1761414967993-a1d13f61-0.jpg",
   "created_at": "2025-10-25T17:56:07.993Z",
-  "updated_at": "2025-10-25T19:00:39.331Z"
+  "updated_at": "2025-11-27T17:37:24.911Z",
+  "author": "suchxs",
+  "is_previous_exam": true,
+  "exam_school_year": "2025",
+  "exam_semester": "1st"
 }
