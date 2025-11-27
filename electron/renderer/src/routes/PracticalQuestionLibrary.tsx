@@ -129,6 +129,10 @@ const PracticalQuestionLibrary: React.FC = () => {
           difficulty: record.difficulty,
           sectionKey: record.sectionKey,
           lesson: record.lesson,
+          author: record.author || '',
+          isPreviousExam: record.isPreviousExam || false,
+          examSchoolYear: record.examSchoolYear || '',
+          examSemester: record.examSemester || '',
           files: record.files, // Include all files (even answer files)
           testCases: record.testCases,
           imageDataUrl: record.imageDataUrl,

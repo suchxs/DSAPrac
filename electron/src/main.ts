@@ -1784,13 +1784,13 @@ app.whenReady().then(() => {
     }
 
     const normalizedTestCases = testCases.map((tc, index) => {
-      if (!tc || typeof tc.input !== 'string' || typeof tc.expectedOutput !== 'string') {
+      if (!tc || typeof tc.expectedOutput !== 'string') {
         throw new Error(`Test case #${index + 1} is invalid.`);
       }
-      const input = tc.input.trim();
+      const input = typeof tc.input === 'string' ? tc.input : '';
       const expectedOutput = tc.expectedOutput.trim();
-      if (!input || !expectedOutput) {
-        throw new Error(`Test case #${index + 1} must have both input and expected output.`);
+      if (!expectedOutput) {
+        throw new Error(`Test case #${index + 1} must have expected output.`);
       }
       return {
         input,
@@ -2110,13 +2110,13 @@ app.whenReady().then(() => {
     }
 
     const normalizedTestCases = testCases.map((tc, index) => {
-      if (!tc || typeof tc.input !== 'string' || typeof tc.expectedOutput !== 'string') {
+      if (!tc || typeof tc.expectedOutput !== 'string') {
         throw new Error(`Test case #${index + 1} is invalid.`);
       }
-      const input = tc.input.trim();
+      const input = typeof tc.input === 'string' ? tc.input : '';
       const expectedOutput = tc.expectedOutput.trim();
-      if (!input || !expectedOutput) {
-        throw new Error(`Test case #${index + 1} must have both input and expected output.`);
+      if (!expectedOutput) {
+        throw new Error(`Test case #${index + 1} must have expected output.`);
       }
       return {
         input,

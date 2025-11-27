@@ -829,7 +829,7 @@ const PracticalQuestionCreator: React.FC = () => {
     if (testCases.length < 3) return false;
     
     const allTestCasesValid = testCases.every(
-      (tc) => tc.input.trim().length > 0 && tc.expectedOutput.trim().length > 0
+      (tc) => tc.expectedOutput.trim().length > 0
     );
     return allTestCasesValid;
   }, [title, description, section, lesson, author, files, testCases]);
@@ -1170,7 +1170,7 @@ const PracticalQuestionCreator: React.FC = () => {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mt-10 lg:mt-12">
               <div>
                 <label htmlFor="title" className="block text-sm font-medium text-neutral-200 mb-2">
-                  Problem Title
+                  Problem Title <span className="text-rose-400">*</span>
                 </label>
                 <input
                   id="title"
@@ -1184,7 +1184,7 @@ const PracticalQuestionCreator: React.FC = () => {
 
               <div>
                 <label htmlFor="difficulty" className="block text-sm font-medium text-neutral-200 mb-2">
-                  Difficulty
+                  Difficulty <span className="text-rose-400">*</span>
                 </label>
                 <select
                   id="difficulty"
@@ -1202,7 +1202,7 @@ const PracticalQuestionCreator: React.FC = () => {
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 mt-6">
               <div>
                 <label htmlFor="section" className="block text-sm font-medium text-neutral-200 mb-2">
-                  Section
+                  Section <span className="text-rose-400">*</span>
                 </label>
                 <select
                   id="section"
@@ -1221,7 +1221,7 @@ const PracticalQuestionCreator: React.FC = () => {
 
               <div>
                 <label htmlFor="lesson" className="block text-sm font-medium text-neutral-200 mb-2">
-                  Lesson
+                  Lesson <span className="text-rose-400">*</span>
                 </label>
                 <select
                   id="lesson"
@@ -1308,7 +1308,7 @@ const PracticalQuestionCreator: React.FC = () => {
 
             <div className="mt-6">
               <label htmlFor="description" className="block text-sm font-medium text-neutral-200 mb-2">
-                Problem Description
+                Problem Description <span className="text-rose-400">*</span>
               </label>
               <textarea
                 id="description"
@@ -1620,12 +1620,13 @@ const PracticalQuestionCreator: React.FC = () => {
                   {!title.trim() && <li>Problem title is filled</li>}
                   {!description.trim() && <li>Problem description is filled</li>}
                   {(!section || !lesson) && <li>Section and lesson are selected</li>}
+                  {!author.trim() && <li>Author name is provided</li>}
                   {files.length === 0 && <li>At least one code file is added</li>}
                   {!files.some(f => f.isAnswerFile) && <li>At least one file is marked as "Answer File"</li>}
                   {files.some(f => !f.filename.trim()) && <li>All files have a filename</li>}
                   {testCases.length < 3 && <li>At least 3 test cases are added (currently {testCases.length})</li>}
-                  {testCases.some(tc => !tc.input.trim() || !tc.expectedOutput.trim()) && (
-                    <li>All test cases have input and expected output</li>
+                  {testCases.some(tc => !tc.expectedOutput.trim()) && (
+                    <li>All test cases have expected output</li>
                   )}
                 </ul>
               </div>
