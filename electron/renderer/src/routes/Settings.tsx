@@ -4,6 +4,8 @@ import { useNavigate } from 'react-router-dom';
 interface AppSettings {
   autoSaveEnabled: boolean;
   autoSaveInterval: number;
+  developerConsoleEnabled: boolean;
+  developerConsoleKey: string;
 }
 
 const Settings: React.FC = () => {
@@ -12,6 +14,8 @@ const Settings: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>({
     autoSaveEnabled: true,
     autoSaveInterval: 30,
+    developerConsoleEnabled: false,
+    developerConsoleKey: '`',
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -55,6 +59,8 @@ const Settings: React.FC = () => {
     const defaultSettings: AppSettings = {
       autoSaveEnabled: true,
       autoSaveInterval: 30,
+      developerConsoleEnabled: false,
+      developerConsoleKey: '`',
     };
     setSettings(defaultSettings);
     setHasChanges(true);
@@ -184,6 +190,54 @@ const Settings: React.FC = () => {
     </div>
   );
 
+  const renderAdvancedSettings = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between p-4 rounded-lg border border-neutral-800 bg-neutral-950/50 hover:border-neutral-700 transition">
+        <div className="flex-1">
+          <h3 className="text-sm font-medium text-neutral-200">Developer Console</h3>
+          <p className="text-xs text-neutral-500 mt-1">
+            Toggle the in-app developer console overlay for diagnostics and commands.
+          </p>
+        </div>
+        <div className="ml-4">
+          <button
+            onClick={() => updateSetting('developerConsoleEnabled', !settings.developerConsoleEnabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition cursor-pointer ${
+              settings.developerConsoleEnabled ? 'bg-blue-600' : 'bg-neutral-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                settings.developerConsoleEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {settings.developerConsoleEnabled && (
+        <div className="p-4 rounded-lg border border-neutral-800 bg-neutral-950/50">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex-1">
+              <h3 className="text-sm font-medium text-neutral-200">Console Toggle Key</h3>
+              <p className="text-xs text-neutral-500 mt-1">
+                Press a single key to set the console hotkey. Default is ` (backtick).
+              </p>
+            </div>
+            <input
+              type="text"
+              maxLength={1}
+              value={settings.developerConsoleKey}
+              onChange={(e) => updateSetting('developerConsoleKey', e.target.value || '`')}
+              className="w-16 text-center px-3 py-2 rounded-md border border-neutral-800 bg-neutral-900 text-neutral-100 text-lg font-semibold focus:outline-none focus:border-blue-500"
+              aria-label="Developer console keybind"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="h-screen overflow-y-auto bg-neutral-950 text-neutral-100">
       <div className="mx-auto flex min-h-full w-full max-w-6xl flex-col px-6 py-12">
@@ -254,7 +308,7 @@ const Settings: React.FC = () => {
                     {selectedTab === 'general' && renderGeneralSettings()}
                     {selectedTab === 'appearance' && renderPlaceholderSettings('Appearance')}
                     {selectedTab === 'editor' && renderPlaceholderSettings('Editor')}
-                    {selectedTab === 'advanced' && renderPlaceholderSettings('Advanced')}
+                    {selectedTab === 'advanced' && renderAdvancedSettings()}
                   </>
                 )}
 

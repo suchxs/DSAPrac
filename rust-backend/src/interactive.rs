@@ -2,10 +2,47 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration as StdDuration, SystemTime, UNIX_EPOCH};
 use tempfile::TempDir;
-use tokio::fs;
+use tokio::fs as tokio_fs;
 use tokio::process::Command as TokioCommand;
 use tokio::time::{timeout, Duration};
+
+static RUN_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+fn next_run_path() -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| StdDuration::from_millis(0))
+        .as_micros();
+    let count = RUN_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    std::env::temp_dir().join(format!("dsa-run-{}-{}{}", ts, count, suffix))
+}
+
+fn clean_old_run_artifacts() {
+    let tmp = std::env::temp_dir();
+    let cutoff = SystemTime::now()
+        .checked_sub(StdDuration::from_secs(60 * 30)) // ~30 minutes
+        .unwrap_or(SystemTime::now());
+    if let Ok(entries) = std::fs::read_dir(tmp) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with("dsa-run-") {
+                    if let Ok(meta) = entry.metadata() {
+                        if let Ok(modified) = meta.modified() {
+                            if modified < cutoff {
+                                let _ = std::fs::remove_file(&path);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CodeFile {
@@ -32,15 +69,15 @@ pub async fn compile_files(files: Vec<CodeFile>, language: &str) -> Result<Compi
         
         // Create parent directories if needed
         if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent).await?;
+            tokio_fs::create_dir_all(parent).await?;
         }
         
-        fs::write(&file_path, &file.content).await
+        tokio_fs::write(&file_path, &file.content).await
             .context(format!("Failed to write file: {}", file.filename))?;
     }
     
     // Determine compiler and source files
-    let (compiler, extension) = match language {
+    let compiler = match language {
         "c" => ("gcc", "c"),
         "cpp" => ("g++", "cpp"),
         _ => return Err(anyhow::anyhow!("Unsupported language: {}", language)),
@@ -103,13 +140,18 @@ pub async fn compile_files(files: Vec<CodeFile>, language: &str) -> Result<Compi
         });
     }
     
-    // Keep temp_dir alive by returning path as string and forgetting the temp_dir
-    let exe_path = executable_path.to_string_lossy().to_string();
-    std::mem::forget(temp_dir); // Don't cleanup yet - executable is still in there
+    // Move executable to a stable temp path and cleanup build dir
+    clean_old_run_artifacts();
+    let final_path = next_run_path();
+    if let Some(parent) = final_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::copy(&executable_path, &final_path)?;
+    // temp_dir drops here and cleans sources/artifacts
     
     Ok(CompileResult {
         success: true,
-        executable_path: Some(exe_path),
+        executable_path: Some(final_path.to_string_lossy().to_string()),
         error: None,
         compile_time_ms,
     })
@@ -121,37 +163,3 @@ pub struct ExecutionMetrics {
     pub peak_memory_kb: u64,
 }
 
-/// Get memory usage of a process (Windows-specific)
-#[cfg(windows)]
-fn get_process_memory(pid: u32) -> Option<u64> {
-    use std::process::Command;
-    
-    let output = Command::new("tasklist")
-        .args(&["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-        .output()
-        .ok()?;
-    
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    
-    // Parse CSV output: "name","PID","Session","Mem Usage"
-    // Memory is like "1,234 K"
-    let parts: Vec<&str> = stdout.split(',').collect();
-    if parts.len() >= 4 {
-        let mem_str = parts[4].trim().trim_matches('"');
-        let mem_kb: u64 = mem_str
-            .replace(",", "")
-            .replace(" K", "")
-            .trim()
-            .parse()
-            .ok()?;
-        return Some(mem_kb);
-    }
-    
-    None
-}
-
-#[cfg(not(windows))]
-fn get_process_memory(_pid: u32) -> Option<u64> {
-    // Linux/Mac implementation would use /proc or ps
-    None
-}

@@ -5,9 +5,10 @@ import { FitAddon } from '@xterm/addon-fit';
 interface TerminalProps {
   onData: (data: string) => void;
   onResize?: (cols: number, rows: number) => void;
+  onReady?: (api: { write: (data: string) => void; clear: () => void }) => void;
 }
 
-export const Terminal: React.FC<TerminalProps> = ({ onData, onResize }) => {
+export const Terminal: React.FC<TerminalProps> = ({ onData, onResize, onReady }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -90,13 +91,20 @@ export const Terminal: React.FC<TerminalProps> = ({ onData, onResize }) => {
     fitAddonRef.current = fitAddon;
 
     // Expose write and clear methods on window immediately
-    (window as any).terminalWrite = (data: string) => {
+    const write = (data: string) => {
       console.log('[Terminal Component] Writing data:', data);
       xterm.write(data);
     };
-    (window as any).terminalClear = () => {
+    const clear = () => {
       xterm.clear();
     };
+
+    (window as any).terminalWrite = write;
+    (window as any).terminalClear = clear;
+
+    if (onReady) {
+      onReady({ write, clear });
+    }
     
     console.log('[Terminal Component] Terminal initialized, write function exposed');
 

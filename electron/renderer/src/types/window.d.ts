@@ -8,6 +8,7 @@ export interface ElectronAPI {
   openMenu: () => void;
   openQuestionMaker: () => void;
   onNavigate: (callback: (route: string) => void) => void;
+  onSettingsUpdated: (callback: (settings: AppSettings) => void) => () => void;
   // Progress APIs
   getProgress: () => Promise<ProgressData>;
   updateTheory: (tag: string, answeredDelta: number | string[]) => Promise<ProgressData>;
@@ -39,6 +40,7 @@ export interface ElectronAPI {
   runPracticalCode: (payload: RunPracticalCodePayload) => Promise<RunPracticalCodeResult>;
   submitPracticalSolution: (payload: SubmitPracticalSolutionPayload) => Promise<SubmitPracticalSolutionResult>;
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
+  runDevConsoleCommand: (command: string) => Promise<{ ok: boolean; output: string[]; action?: string }>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -52,6 +54,8 @@ export interface ElectronAPI {
 export interface AppSettings {
   autoSaveEnabled: boolean;
   autoSaveInterval: number; // in seconds
+  developerConsoleEnabled: boolean;
+  developerConsoleKey: string;
 }
 
 export interface PracticalProgress {
@@ -205,6 +209,7 @@ export interface PracticalQuestionRecord {
   isPreviousExam?: boolean;
   examSchoolYear?: string;
   examSemester?: string;
+  initialFiles?: CodeFilePayload[];
 }
 
 export interface UpdatePracticalQuestionPayload {

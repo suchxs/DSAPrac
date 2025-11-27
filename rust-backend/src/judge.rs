@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 
 /// Main judge engine that orchestrates compilation, execution, and evaluation
 pub struct Judge {
-    sandbox: Sandbox,
+    _sandbox: Sandbox,
 }
 
 impl Judge {
@@ -14,7 +14,7 @@ impl Judge {
         let sandbox = Sandbox::new().context("Failed to create sandbox")?;
         sandbox.setup().context("Failed to setup sandbox")?;
         
-        Ok(Self { sandbox })
+        Ok(Self { _sandbox: sandbox })
     }
 
     /// Process a judge request and return results
@@ -119,18 +119,6 @@ impl Judge {
             error: None,
             status: overall_status,
         })
-    }
-
-    /// Normalize output for comparison (trim whitespace, normalize line endings)
-    fn normalize_output_default(&self, output: &str) -> String {
-        output
-            .replace("\r\n", "\n")
-            .lines()
-            .map(|line| line.trim())
-            .collect::<Vec<_>>()
-            .join("\n")
-            .trim()
-            .to_string()
     }
 
     fn normalize_output_with(&self, output: &str, opts: &NormalizationOptions) -> String {

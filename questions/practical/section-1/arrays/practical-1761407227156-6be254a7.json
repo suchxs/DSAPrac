@@ -29,6 +29,14 @@
       "is_answer_file": false,
       "is_hidden": true,
       "language": "c"
+    },
+    {
+      "filename": "test.c",
+      "content": "#include <stdio.h>\n",
+      "is_locked": false,
+      "is_answer_file": false,
+      "is_hidden": false,
+      "language": "c"
     }
   ],
   "test_cases": [
@@ -56,7 +64,7 @@
   ],
   "image": "practical-1761407227156-6be254a7-0.png",
   "created_at": "2025-10-25T15:47:07.155Z",
-  "updated_at": "2025-11-27T14:03:50.511Z",
+  "updated_at": "2025-11-27T14:50:06.677Z",
   "images": [
     "practical-1761407227156-6be254a7-0.png",
     "practical-1761407227156-6be254a7-1.jpg",
@@ -66,6 +74,6 @@
   ],
   "author": "suchxs",
   "is_previous_exam": true,
-  "exam_school_year": "2025",
-  "exam_semester": "1st Semester"
+  "exam_school_year": "2024",
+  "exam_semester": "1st"
 }
