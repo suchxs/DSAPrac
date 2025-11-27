@@ -132,6 +132,10 @@ const PracticalQuestionLibrary: React.FC = () => {
           files: record.files, // Include all files (even answer files)
           testCases: record.testCases,
           imageDataUrl: record.imageDataUrl,
+          images: record.imageDataUrls?.map((url, index) => ({
+            dataUrl: url,
+            name: `image-${index + 1}`,
+          })),
         }
       }
     });
@@ -227,16 +231,16 @@ const PracticalQuestionLibrary: React.FC = () => {
           </div>
         ) : (
           <div className="flex-1">
-            <div className="space-y-10">
-            {groupedQuestions.map((section) => (
-              <div key={section.sectionKey} className="space-y-6">
+            <div>
+            {groupedQuestions.map((section, sectionIdx) => (
+              <div key={section.sectionKey} className={`space-y-8 ${sectionIdx > 0 ? 'mt-16 pt-8 border-t border-neutral-800' : ''}`}>
                 <div>
                   <h2 className="text-xl font-semibold text-white">{section.section}</h2>
                   <div className="mt-1 h-0.5 w-16 bg-neutral-700" />
                 </div>
                 {section.lessons.map((lesson) => (
-                  <div key={`${section.sectionKey}-${lesson.lesson}`} className="space-y-4 mt-8">
-                    <div className="flex items-center justify-between">
+                  <div key={`${section.sectionKey}-${lesson.lesson}`} className="mt-6 space-y-4">
+                    <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-medium text-neutral-200">{lesson.lesson}</h3>
                       <span className="text-xs uppercase tracking-wide text-neutral-500">
                         {lesson.questions.length} problem{lesson.questions.length === 1 ? '' : 's'}
@@ -262,9 +266,6 @@ const PracticalQuestionLibrary: React.FC = () => {
                                   {question.difficulty}
                                 </span>
                               </div>
-                              <p className="mt-2 text-sm text-neutral-400 line-clamp-2">
-                                {question.description}
-                              </p>
                             </div>
                             {question.createdAt && (
                               <div className="text-right text-xs text-neutral-500 shrink-0">
@@ -274,9 +275,10 @@ const PracticalQuestionLibrary: React.FC = () => {
                             )}
                           </div>
 
-                          {question.imageDataUrl && (
+                          {/* Display only the first image in the library */}
+                          {question.imageDataUrls?.[0] && (
                             <img
-                              src={question.imageDataUrl}
+                              src={question.imageDataUrls[0]}
                               alt="Problem diagram"
                               className="max-h-48 w-full rounded-lg object-contain bg-neutral-950"
                             />

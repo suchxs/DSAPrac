@@ -35,6 +35,7 @@ export interface ElectronAPI {
   openPracticalProblem: (questionId: string) => void;
   getCurrentPracticalQuestion: () => Promise<PracticalQuestionRecord>;
   savePracticalProgress: (payload: SavePracticalProgressPayload) => Promise<void>;
+  resetPracticalProgress: (payload: { questionId: string }) => Promise<{ success: boolean }>;
   runPracticalCode: (payload: RunPracticalCodePayload) => Promise<RunPracticalCodeResult>;
   submitPracticalSolution: (payload: SubmitPracticalSolutionPayload) => Promise<SubmitPracticalSolutionResult>;
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
@@ -43,6 +44,14 @@ export interface ElectronAPI {
   windowMaximize: () => void;
   windowClose: () => void;
   windowIsMaximized: () => Promise<boolean>;
+  // Settings APIs
+  getSettings: () => Promise<AppSettings>;
+  saveSettings: (settings: Partial<AppSettings>) => Promise<AppSettings>;
+}
+
+export interface AppSettings {
+  autoSaveEnabled: boolean;
+  autoSaveInterval: number; // in seconds
 }
 
 export interface PracticalProgress {
@@ -70,6 +79,7 @@ export interface QuestionCounts {
 export interface ImagePayload {
   name: string;
   dataUrl: string;
+  order?: number;
 }
 
 export interface ChoicePayload {
@@ -81,8 +91,13 @@ export interface CreateTheoreticalQuestionPayload {
   question: string;
   section: string;
   lesson: string;
+  author: string;
   choices: ChoicePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;   // Legacy single image
+  images?: ImagePayload[];       // New multiple images
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface CreateQuestionResult {
@@ -105,11 +120,16 @@ export interface TheoreticalQuestionRecord {
   lesson: string;
   filePath: string;
   question: string;
+  author?: string;
   choices: Array<{ text: string; isCorrect: boolean }>;
   correctCount: number;
-  imageDataUrl?: string | null;
+  imageDataUrl?: string | null;   // Legacy single image
+  imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
   updatedAt?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface UpdateTheoreticalQuestionPayload {
@@ -118,8 +138,13 @@ export interface UpdateTheoreticalQuestionPayload {
   sectionKey: string;
   lesson: string;
   question: string;
+  author: string;
   choices: ChoicePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;   // Legacy single image
+  images?: ImagePayload[];       // New multiple images
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface DeleteTheoreticalQuestionPayload {
@@ -151,9 +176,14 @@ export interface CreatePracticalQuestionPayload {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   section: string;
   lesson: string;
+  author?: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;   // Legacy single image
+  images?: ImagePayload[];       // New multiple images
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface PracticalQuestionRecord {
@@ -164,12 +194,17 @@ export interface PracticalQuestionRecord {
   sectionKey: string;
   section: string;
   lesson: string;
+  author?: string;
   filePath: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
-  imageDataUrl?: string | null;
+  imageDataUrl?: string | null;   // Legacy single image
+  imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
   updatedAt?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface UpdatePracticalQuestionPayload {
@@ -180,9 +215,14 @@ export interface UpdatePracticalQuestionPayload {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   sectionKey: string;
   lesson: string;
+  author?: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;   // Legacy single image
+  images?: ImagePayload[];       // New multiple images
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface DeletePracticalQuestionPayload {

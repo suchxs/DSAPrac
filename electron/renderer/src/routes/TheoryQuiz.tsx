@@ -8,11 +8,16 @@ interface TheoreticalQuestionRecord {
   lesson: string;
   filePath: string;
   question: string;
+  author?: string;
   choices: Array<{ text: string; isCorrect: boolean }>;
   correctCount: number;
   imageDataUrl?: string | null;
+  imageDataUrls?: string[];
   createdAt?: string;
   updatedAt?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 interface QuizAnswer {
@@ -366,7 +371,7 @@ const TheoryQuiz: React.FC = () => {
         {/* Question Card */}
         <div className="bg-neutral-900/60 border border-neutral-800 rounded-xl p-8 mb-6">
           {/* Question Tag */}
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-2">
             <span className="px-3 py-1 bg-blue-500/10 text-blue-400 rounded-full text-xs font-medium">
               {currentQuestion.lesson}
             </span>
@@ -375,10 +380,35 @@ const TheoryQuiz: React.FC = () => {
             </span>
           </div>
 
+          {/* Author */}
+          {currentQuestion.author && (
+            <div className="text-xs text-neutral-400 mb-4">
+              by {currentQuestion.author}
+            </div>
+          )}
+
           {/* Question */}
-          <h2 className="text-xl font-medium mb-6 leading-relaxed">
+          <h2 className="text-xl font-medium mb-4 leading-relaxed">
             {currentQuestion.question}
           </h2>
+
+          {/* Images */}
+          {currentQuestion.imageDataUrls && currentQuestion.imageDataUrls.length > 0 && (
+            <div className={`mb-6 grid gap-3 ${currentQuestion.imageDataUrls.length === 1 ? 'grid-cols-1' : currentQuestion.imageDataUrls.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+              {currentQuestion.imageDataUrls.map((url, imgIndex) => (
+                <div key={imgIndex} className="flex flex-col gap-1">
+                  <img
+                    src={url}
+                    alt={`Question image ${imgIndex + 1}`}
+                    className="max-h-48 w-full rounded-lg object-contain bg-neutral-950 border border-neutral-800"
+                  />
+                  {currentQuestion.imageDataUrls!.length > 1 && (
+                    <span className="text-xs text-neutral-500 text-center">Image {imgIndex + 1}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Options */}
           <div className="space-y-3">
@@ -418,6 +448,35 @@ const TheoryQuiz: React.FC = () => {
               );
             })}
           </div>
+
+          {/* Previous Exam Badge - Lower Right */}
+          {currentQuestion.isPreviousExam && (
+            <div className="flex justify-end mt-4">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4 text-emerald-400"
+                >
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                  <path d="M6 12v5c3 3 9 3 12 0v-5" />
+                </svg>
+                <span className="text-xs font-medium text-emerald-400">
+                  Previous DSA Exam
+                  {(currentQuestion.examSchoolYear || currentQuestion.examSemester) && (
+                    <span className="text-emerald-500/70 ml-1">
+                      ({[currentQuestion.examSchoolYear, currentQuestion.examSemester].filter(Boolean).join(' • ')})
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Navigation */}

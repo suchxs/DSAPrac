@@ -1,16 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-interface SettingItem {
-  title: string;
-  description: string;
-  type: 'dropdown' | 'toggle' | 'slider' | 'number' | 'button';
-  options?: string[];
+interface AppSettings {
+  autoSaveEnabled: boolean;
+  autoSaveInterval: number;
 }
 
 const Settings: React.FC = () => {
   const navigate = useNavigate();
   const [selectedTab, setSelectedTab] = useState('general');
+  const [settings, setSettings] = useState<AppSettings>({
+    autoSaveEnabled: true,
+    autoSaveInterval: 30,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [hasChanges, setHasChanges] = useState(false);
 
   const tabs = [
     { id: 'general', label: 'General', icon: '⚙️' },
@@ -19,30 +24,165 @@ const Settings: React.FC = () => {
     { id: 'advanced', label: 'Advanced', icon: '🔧' },
   ];
 
-  const settingSections: Record<string, SettingItem[]> = {
-    general: [
-      { title: 'Language', description: 'Select your preferred language', type: 'dropdown', options: ['English', 'Spanish', 'French'] },
-      { title: 'Auto-save', description: 'Automatically save your progress', type: 'toggle' },
-      { title: 'Notifications', description: 'Enable desktop notifications', type: 'toggle' },
-    ],
-    appearance: [
-      { title: 'Theme', description: 'Choose your color theme', type: 'dropdown', options: ['Dark', 'Light', 'Auto'] },
-      { title: 'Font Size', description: 'Adjust the interface font size', type: 'slider' },
-      { title: 'Animations', description: 'Enable smooth animations', type: 'toggle' },
-    ],
-    editor: [
-      { title: 'Tab Size', description: 'Number of spaces per tab', type: 'number' },
-      { title: 'Auto-complete', description: 'Enable code suggestions', type: 'toggle' },
-      { title: 'Line Numbers', description: 'Show line numbers in editor', type: 'toggle' },
-    ],
-    advanced: [
-      { title: 'Developer Mode', description: 'Enable advanced developer features', type: 'toggle' },
-      { title: 'Clear Cache', description: 'Remove all cached data', type: 'button' },
-      { title: 'Reset Settings', description: 'Restore default settings', type: 'button' },
-    ],
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  const loadSettings = async () => {
+    try {
+      const loadedSettings = await window.api.getSettings();
+      setSettings(loadedSettings);
+    } catch (error) {
+      console.error('Failed to load settings:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const currentSettings = settingSections[selectedTab] || [];
+  const handleSaveSettings = async () => {
+    setIsSaving(true);
+    try {
+      await window.api.saveSettings(settings);
+      setHasChanges(false);
+    } catch (error) {
+      console.error('Failed to save settings:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleResetToDefaults = async () => {
+    const defaultSettings: AppSettings = {
+      autoSaveEnabled: true,
+      autoSaveInterval: 30,
+    };
+    setSettings(defaultSettings);
+    setHasChanges(true);
+  };
+
+  const updateSetting = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
+    setSettings(prev => ({ ...prev, [key]: value }));
+    setHasChanges(true);
+  };
+
+  const renderGeneralSettings = () => (
+    <div className="space-y-4">
+      {/* Auto-save Toggle */}
+      <div className="flex items-center justify-between p-4 rounded-lg border border-neutral-800 bg-neutral-950/50 hover:border-neutral-700 transition">
+        <div className="flex-1">
+          <h3 className="text-sm font-medium text-neutral-200">Auto-save</h3>
+          <p className="text-xs text-neutral-500 mt-1">
+            Automatically save your progress in practical problems
+          </p>
+        </div>
+        <div className="ml-4">
+          <button
+            onClick={() => updateSetting('autoSaveEnabled', !settings.autoSaveEnabled)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition cursor-pointer ${
+              settings.autoSaveEnabled ? 'bg-blue-600' : 'bg-neutral-700'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                settings.autoSaveEnabled ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      {/* Auto-save Interval */}
+      {settings.autoSaveEnabled && (
+        <div className="flex items-center justify-between p-4 rounded-lg border border-neutral-800 bg-neutral-950/50 hover:border-neutral-700 transition">
+          <div className="flex-1">
+            <h3 className="text-sm font-medium text-neutral-200">Auto-save Interval</h3>
+            <p className="text-xs text-neutral-500 mt-1">
+              How often to automatically save your code (in seconds)
+            </p>
+          </div>
+          <div className="ml-4 flex items-center gap-3">
+            <input
+              type="range"
+              min="10"
+              max="300"
+              step="10"
+              value={settings.autoSaveInterval}
+              onChange={(e) => updateSetting('autoSaveInterval', parseInt(e.target.value))}
+              className="w-32 accent-blue-500 cursor-pointer"
+            />
+            <span className="text-sm text-neutral-300 w-16 text-right">
+              {settings.autoSaveInterval}s
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Language - Placeholder */}
+      <div className="flex items-center justify-between p-4 rounded-lg border border-neutral-800 bg-neutral-950/50 opacity-50">
+        <div className="flex-1">
+          <h3 className="text-sm font-medium text-neutral-200">Language</h3>
+          <p className="text-xs text-neutral-500 mt-1">
+            Select your preferred language (Coming Soon)
+          </p>
+        </div>
+        <div className="ml-4">
+          <select
+            className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 outline-none cursor-not-allowed"
+            disabled
+          >
+            <option>English</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Notifications - Placeholder */}
+      <div className="flex items-center justify-between p-4 rounded-lg border border-neutral-800 bg-neutral-950/50 opacity-50">
+        <div className="flex-1">
+          <h3 className="text-sm font-medium text-neutral-200">Notifications</h3>
+          <p className="text-xs text-neutral-500 mt-1">
+            Enable desktop notifications (Coming Soon)
+          </p>
+        </div>
+        <div className="ml-4">
+          <button
+            className="relative inline-flex h-6 w-11 items-center rounded-full bg-neutral-700 cursor-not-allowed"
+            disabled
+          >
+            <span className="inline-block h-4 w-4 transform rounded-full bg-white translate-x-1" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPlaceholderSettings = (sectionName: string) => (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+        <div className="flex items-start gap-3">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-5 w-5 text-amber-400 mt-0.5 shrink-0"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 16v-4" />
+            <path d="M12 8h.01" />
+          </svg>
+          <div>
+            <p className="text-sm font-medium text-amber-200">{sectionName} Settings Coming Soon</p>
+            <p className="text-xs text-amber-300/80 mt-1">
+              These settings will be available in a future update.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="h-screen overflow-y-auto bg-neutral-950 text-neutral-100">
@@ -105,112 +245,37 @@ const Settings: React.FC = () => {
             {/* Content Area */}
             <div className="md:col-span-3 p-6">
               <div className="space-y-6">
-                {/* Info Banner */}
-                <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-5 w-5 text-blue-400 mt-0.5 shrink-0"
-                    >
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 16v-4" />
-                      <path d="M12 8h.01" />
-                    </svg>
-                    <div>
-                      <p className="text-sm font-medium text-blue-200">Settings Coming Soon</p>
-                      <p className="text-xs text-blue-300/80 mt-1">
-                        These settings are placeholders. Functionality will be implemented in future updates.
-                      </p>
-                    </div>
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
                   </div>
-                </div>
-
-                {/* Settings List */}
-                <div className="space-y-4">
-                  {currentSettings.map((setting, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-4 rounded-lg border border-neutral-800 bg-neutral-950/50 hover:border-neutral-700 transition"
-                    >
-                      <div className="flex-1">
-                        <h3 className="text-sm font-medium text-neutral-200">
-                          {setting.title}
-                        </h3>
-                        <p className="text-xs text-neutral-500 mt-1">
-                          {setting.description}
-                        </p>
-                      </div>
-                      <div className="ml-4">
-                        {setting.type === 'toggle' && (
-                          <button
-                            className="relative inline-flex h-6 w-11 items-center rounded-full bg-neutral-700 transition hover:bg-neutral-600 cursor-pointer"
-                            disabled
-                          >
-                            <span className="inline-block h-4 w-4 transform rounded-full bg-white transition translate-x-1" />
-                          </button>
-                        )}
-                        {setting.type === 'dropdown' && (
-                          <select
-                            className="rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 outline-none transition focus:border-neutral-600 cursor-pointer"
-                            disabled
-                          >
-                            {setting.options?.map((option: string) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                        {setting.type === 'number' && (
-                          <input
-                            type="number"
-                            className="w-20 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-sm text-neutral-200 outline-none transition focus:border-neutral-600"
-                            defaultValue={4}
-                            disabled
-                          />
-                        )}
-                        {setting.type === 'slider' && (
-                          <input
-                            type="range"
-                            className="w-32 accent-white cursor-pointer"
-                            min="12"
-                            max="20"
-                            defaultValue="14"
-                            disabled
-                          />
-                        )}
-                        {setting.type === 'button' && (
-                          <button
-                            className="rounded-md border border-neutral-800 bg-neutral-900 px-4 py-1.5 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-800 cursor-pointer"
-                            disabled
-                          >
-                            {setting.title}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                ) : (
+                  <>
+                    {selectedTab === 'general' && renderGeneralSettings()}
+                    {selectedTab === 'appearance' && renderPlaceholderSettings('Appearance')}
+                    {selectedTab === 'editor' && renderPlaceholderSettings('Editor')}
+                    {selectedTab === 'advanced' && renderPlaceholderSettings('Advanced')}
+                  </>
+                )}
 
                 {/* Footer Actions */}
                 <div className="flex items-center justify-end gap-3 pt-6 border-t border-neutral-800">
                   <button
+                    onClick={handleResetToDefaults}
                     className="rounded-md border border-neutral-800 bg-neutral-900 px-4 py-2 text-sm font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-800 cursor-pointer"
-                    disabled
                   >
                     Reset to Defaults
                   </button>
                   <button
-                    className="rounded-md border border-white bg-white px-4 py-2 text-sm font-medium text-neutral-950 transition hover:bg-neutral-200 cursor-pointer"
-                    disabled
+                    onClick={handleSaveSettings}
+                    disabled={!hasChanges || isSaving}
+                    className={`rounded-md border px-4 py-2 text-sm font-medium transition cursor-pointer ${
+                      hasChanges && !isSaving
+                        ? 'border-white bg-white text-neutral-950 hover:bg-neutral-200'
+                        : 'border-neutral-700 bg-neutral-800 text-neutral-500 cursor-not-allowed'
+                    }`}
                   >
-                    Save Changes
+                    {isSaving ? 'Saving...' : 'Save Changes'}
                   </button>
                 </div>
               </div>

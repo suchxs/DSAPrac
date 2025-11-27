@@ -23,6 +23,15 @@ interface TestCase {
   memoryUsage?: number; // in KB
 }
 
+interface ImageItem {
+  id: string;
+  file: File | null;
+  preview: string;
+  name: string;
+}
+
+const MAX_IMAGES = 5;
+
 type Difficulty = 'Easy' | 'Medium' | 'Hard';
 
 const createCodeFile = (index: number, language: 'c' | 'cpp', filename?: string, isHeaderFile?: boolean): CodeFile => {
@@ -62,14 +71,18 @@ const PracticalQuestionCreator: React.FC = () => {
   const [difficulty, setDifficulty] = useState<Difficulty>('Easy');
   const [section, setSection] = useState('');
   const [lesson, setLesson] = useState('');
+  const [author, setAuthor] = useState('');
+  const [isPreviousExam, setIsPreviousExam] = useState(false);
+  const [examSchoolYear, setExamSchoolYear] = useState('');
+  const [examSemester, setExamSemester] = useState('');
   const [defaultLanguage, setDefaultLanguage] = useState<'c' | 'cpp' | null>(null);
   const [files, setFiles] = useState<CodeFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string>('');
   const [testCases, setTestCases] = useState<TestCase[]>([]);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [images, setImages] = useState<ImageItem[]>([]);
   const [imageError, setImageError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [draggedImageId, setDraggedImageId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitSuccess, setSubmitSuccess] = useState<{ section: string; lesson: string; id: string } | null>(null);
@@ -115,6 +128,10 @@ const PracticalQuestionCreator: React.FC = () => {
       setDifficulty(editData.difficulty || 'Easy');
       setSection(editData.sectionKey || '');
       setLesson(editData.lesson || '');
+      setAuthor(editData.author || '');
+      setIsPreviousExam(editData.isPreviousExam || false);
+      setExamSchoolYear(editData.examSchoolYear || '');
+      setExamSemester(editData.examSemester || '');
       
       // Set files with proper structure
       if (editData.files && editData.files.length > 0) {
@@ -136,9 +153,22 @@ const PracticalQuestionCreator: React.FC = () => {
         })));
       }
       
-      // Set image preview if exists
-      if (editData.imageDataUrl) {
-        setImagePreview(editData.imageDataUrl);
+      // Set images if they exist (support both old single image and new multiple images format)
+      if (editData.images && editData.images.length > 0) {
+        setImages(editData.images.map((img: any, index: number) => ({
+          id: `img-${Date.now()}-${index}-${Math.random().toString(16).slice(2, 8)}`,
+          file: null,
+          preview: img.dataUrl,
+          name: img.name || `image-${index + 1}`,
+        })));
+      } else if (editData.imageDataUrl) {
+        // Legacy single image support
+        setImages([{
+          id: `img-${Date.now()}-0-${Math.random().toString(16).slice(2, 8)}`,
+          file: null,
+          preview: editData.imageDataUrl,
+          name: 'image-1',
+        }]);
       }
     }
   }, [editMode, editData]);
@@ -670,6 +700,10 @@ const PracticalQuestionCreator: React.FC = () => {
   };
 
   const handleImageButtonClick = () => {
+    if (images.length >= MAX_IMAGES) {
+      setImageError(`Maximum ${MAX_IMAGES} images allowed.`);
+      return;
+    }
     fileInputRef.current?.click();
   };
 
@@ -678,41 +712,99 @@ const PracticalQuestionCreator: React.FC = () => {
 
     if (!file) return;
 
+    if (images.length >= MAX_IMAGES) {
+      setImageError(`Maximum ${MAX_IMAGES} images allowed.`);
+      return;
+    }
+
     if (!['image/png', 'image/jpeg'].includes(file.type)) {
       setImageError('Unsupported file type. Please choose a PNG or JPG image.');
-      setImageFile(null);
-      setImagePreview(null);
       return;
     }
 
     if (file.size > 5 * 1024 * 1024) {
       setImageError('Image is too large. Please choose a file under 5MB.');
-      setImageFile(null);
-      setImagePreview(null);
       return;
     }
 
     setImageError(null);
-    setImageFile(file);
 
     const reader = new FileReader();
     reader.onload = () => {
-      setImagePreview(typeof reader.result === 'string' ? reader.result : null);
+      const preview = typeof reader.result === 'string' ? reader.result : '';
+      if (preview) {
+        const newImage: ImageItem = {
+          id: `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+          file,
+          preview,
+          name: file.name,
+        };
+        setImages((prev) => [...prev, newImage]);
+      }
     };
     reader.readAsDataURL(file);
+
+    // Clear file input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const resetImageState = () => {
-    setImageFile(null);
-    setImagePreview(null);
+    setImages([]);
     setImageError(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
 
-  const handleRemoveImage = () => {
-    resetImageState();
+  const handleRemoveImage = (imageId: string) => {
+    setImages((prev) => prev.filter((img) => img.id !== imageId));
+  };
+
+  const handleDragStart = (imageId: string) => {
+    setDraggedImageId(imageId);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const handleDrop = (targetId: string) => {
+    if (!draggedImageId || draggedImageId === targetId) {
+      setDraggedImageId(null);
+      return;
+    }
+
+    setImages((prev) => {
+      const draggedIndex = prev.findIndex((img) => img.id === draggedImageId);
+      const targetIndex = prev.findIndex((img) => img.id === targetId);
+      if (draggedIndex === -1 || targetIndex === -1) return prev;
+
+      const newImages = [...prev];
+      const [removed] = newImages.splice(draggedIndex, 1);
+      newImages.splice(targetIndex, 0, removed);
+      return newImages;
+    });
+    setDraggedImageId(null);
+  };
+
+  const handleMoveImageUp = (index: number) => {
+    if (index === 0) return;
+    setImages((prev) => {
+      const newImages = [...prev];
+      [newImages[index - 1], newImages[index]] = [newImages[index], newImages[index - 1]];
+      return newImages;
+    });
+  };
+
+  const handleMoveImageDown = (index: number) => {
+    if (index >= images.length - 1) return;
+    setImages((prev) => {
+      const newImages = [...prev];
+      [newImages[index], newImages[index + 1]] = [newImages[index + 1], newImages[index]];
+      return newImages;
+    });
   };
 
   const visibleTestCases = useMemo(() => testCases.filter(tc => !tc.isHidden), [testCases]);
@@ -721,6 +813,7 @@ const PracticalQuestionCreator: React.FC = () => {
   const isFormValid = useMemo(() => {
     if (!title.trim() || !description.trim()) return false;
     if (!section || !lesson) return false;
+    if (!author.trim()) return false;
     if (files.length === 0) return false;
     
     // Check that at least one file is marked as answer file
@@ -739,7 +832,7 @@ const PracticalQuestionCreator: React.FC = () => {
       (tc) => tc.input.trim().length > 0 && tc.expectedOutput.trim().length > 0
     );
     return allTestCasesValid;
-  }, [title, description, section, lesson, files, testCases]);
+  }, [title, description, section, lesson, author, files, testCases]);
 
   // Run all test cases and collect execution metrics
   const runAllTestCasesForMetrics = async (): Promise<TestCase[]> => {
@@ -857,6 +950,10 @@ const PracticalQuestionCreator: React.FC = () => {
         difficulty,
         section,
         lesson,
+        author: author.trim(),
+        isPreviousExam,
+        examSchoolYear: isPreviousExam ? examSchoolYear : undefined,
+        examSemester: isPreviousExam ? examSemester : undefined,
         files: files.map((f) => ({
           filename: f.filename.trim(),
           content: f.content.replace(/\r\n/g, '\n'),
@@ -872,12 +969,11 @@ const PracticalQuestionCreator: React.FC = () => {
           executionTime: tc.executionTime,
           memoryUsage: tc.memoryUsage,
         })),
-        image: imagePreview
-          ? {
-              name: imageFile?.name ?? 'embedded-image',
-              dataUrl: imagePreview,
-            }
-          : null,
+        images: images.map((img, index) => ({
+          name: img.name,
+          dataUrl: img.preview,
+          order: index,
+        })),
       };
 
       let result;
@@ -923,6 +1019,10 @@ const PracticalQuestionCreator: React.FC = () => {
     setDifficulty('Easy');
     setSection('');
     setLesson('');
+    setAuthor('');
+    setIsPreviousExam(false);
+    setExamSchoolYear('');
+    setExamSemester('');
     setFiles([]);
     setActiveFileId('');
     setTestCases([]);
@@ -1141,6 +1241,72 @@ const PracticalQuestionCreator: React.FC = () => {
             </div>
 
             <div className="mt-6">
+              <label htmlFor="author" className="block text-sm font-medium text-neutral-200 mb-2">
+                Question Author <span className="text-rose-400">*</span>
+              </label>
+              <input
+                id="author"
+                type="text"
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                placeholder="e.g. John Doe"
+                className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2.5 text-sm text-white outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+              />
+            </div>
+
+            {/* Previous Exam Checkbox */}
+            <div className="mt-6">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isPreviousExam}
+                  onChange={(e) => setIsPreviousExam(e.target.checked)}
+                  className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                />
+                <span className="text-sm font-medium text-neutral-200">
+                  This question was part of a previous DSA exam
+                </span>
+              </label>
+
+              {isPreviousExam && (
+                <div className="mt-4 grid gap-4 sm:grid-cols-2 pl-7">
+                  <div>
+                    <label htmlFor="examSemester" className="block text-sm font-medium text-neutral-200">
+                      Semester <span className="text-neutral-500">(optional)</span>
+                    </label>
+                    <select
+                      id="examSemester"
+                      value={examSemester}
+                      onChange={(e) => setExamSemester(e.target.value)}
+                      className="mt-2 w-full rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm text-neutral-200 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 cursor-pointer"
+                    >
+                      <option value="">Select semester</option>
+                      <option value="1st">1st Semester</option>
+                      <option value="2nd">2nd Semester</option>
+                      <option value="Summer">Summer</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="examSchoolYear" className="block text-sm font-medium text-neutral-200">
+                      Year <span className="text-neutral-500">(optional)</span>
+                    </label>
+                    <select
+                      id="examSchoolYear"
+                      value={examSchoolYear}
+                      onChange={(e) => setExamSchoolYear(e.target.value)}
+                      className="mt-2 w-full rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm text-neutral-200 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 cursor-pointer"
+                    >
+                      <option value="">Select year</option>
+                      {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                        <option key={year} value={year.toString()}>{year}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6">
               <label htmlFor="description" className="block text-sm font-medium text-neutral-200 mb-2">
                 Problem Description
               </label>
@@ -1174,8 +1340,11 @@ const PracticalQuestionCreator: React.FC = () => {
                   <path d="M5 12h14" />
                   <rect x="3" y="3" width="18" height="18" ry="2" />
                 </svg>
-                Add Image (Optional)
+                Add Image ({images.length}/{MAX_IMAGES})
               </button>
+              <span className="ml-3 text-xs text-neutral-500">
+                Optional - Up to {MAX_IMAGES} images, drag to reorder
+              </span>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -1190,23 +1359,66 @@ const PracticalQuestionCreator: React.FC = () => {
                 </div>
               )}
 
-              {imagePreview && (
-                <div className="mt-3 overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
-                  <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 text-xs text-neutral-400">
-                    <span>{imageFile?.name}</span>
-                    <button
-                      type="button"
-                      onClick={handleRemoveImage}
-                      className="inline-flex items-center gap-1 rounded-md border border-neutral-800 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+              {images.length > 0 && (
+                <div className="mt-3 space-y-3">
+                  {images.map((img, index) => (
+                    <div
+                      key={img.id}
+                      draggable
+                      onDragStart={() => handleDragStart(img.id)}
+                      onDragOver={handleDragOver}
+                      onDrop={() => handleDrop(img.id)}
+                      className={`overflow-hidden rounded-lg border bg-neutral-950 transition-all ${
+                        draggedImageId === img.id ? 'border-blue-500 opacity-50' : 'border-neutral-800'
+                      }`}
                     >
-                      Remove
-                    </button>
-                  </div>
-                  <img
-                    src={imagePreview}
-                    alt="Preview"
-                    className="max-h-64 w-full object-contain p-4"
-                  />
+                      <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 text-xs text-neutral-400">
+                        <div className="flex items-center gap-3">
+                          <span className="flex items-center gap-1 text-neutral-500">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 cursor-grab" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                            </svg>
+                            #{index + 1}
+                          </span>
+                          <span className="truncate max-w-[200px]">{img.name}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleMoveImageUp(index)}
+                            disabled={index === 0}
+                            className="p-1 rounded hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveImageDown(index)}
+                            disabled={index === images.length - 1}
+                            className="p-1 rounded hover:bg-neutral-800 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveImage(img.id)}
+                            className="inline-flex items-center gap-1 rounded-md border border-neutral-800 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                      <img
+                        src={img.preview}
+                        alt={`Preview ${index + 1}`}
+                        className="max-h-48 w-full object-contain p-4"
+                      />
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

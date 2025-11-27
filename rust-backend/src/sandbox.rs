@@ -1,10 +1,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-/// Basic sandboxing for code execution
-/// Note: This is a simplified implementation. For production use,
-/// consider using more robust sandboxing solutions like Docker or
-/// system-level sandboxing.
+
 pub struct Sandbox {
     working_directory: std::path::PathBuf,
 }
@@ -34,13 +31,6 @@ impl Sandbox {
 
     /// Check if the sandbox is properly configured
     pub fn is_secure(&self) -> bool {
-        // Basic security checks
-        // In a real implementation, you would check:
-        // - File system permissions
-        // - Network access restrictions
-        // - System call limitations
-        // - Resource limits
-        
         self.working_directory.exists() && 
         self.working_directory.is_dir()
     }

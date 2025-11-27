@@ -72,6 +72,8 @@ const PracticeMode: React.FC = () => {
   const [progress, setProgress] = useState<ProgressData | null>(null);
   const [practicalQuestions, setPracticalQuestions] = useState<PracticalQuestionRecord[]>([]);
   const [selectedPractical, setSelectedPractical] = useState<string | null>(null);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     loadProgress();
@@ -155,6 +157,21 @@ const PracticeMode: React.FC = () => {
   const handleStartPractical = () => {
     if (!selectedPractical) return;
     window.api.openPracticalProblem(selectedPractical);
+  };
+
+  const handleResetPractical = async () => {
+    if (!selectedPractical) return;
+    setIsResetting(true);
+    try {
+      await window.api.resetPracticalProgress({ questionId: selectedPractical });
+      setShowResetModal(false);
+      setSelectedPractical(null);
+      // Progress will be updated via onDataRefresh callback
+    } catch (error) {
+      console.error('Failed to reset practical progress:', error);
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   // Group practical questions by section and lesson
@@ -260,32 +277,48 @@ const PracticeMode: React.FC = () => {
               Multiple-choice questions. Select tags below.
             </p>
 
-            <div className="space-y-3 flex-1 overflow-y-auto pr-2 scroll-smooth max-h-[420px]">
-              {sections.map((section) => (
-                <div key={section.id}>
-                  <div className="flex items-center justify-between mb-1.5">
+            <div className="space-y-4 flex-1 overflow-y-auto pr-2 scroll-smooth max-h-[420px]">
+              {sections.map((section, sectionIdx) => (
+                <div 
+                  key={section.id} 
+                  className={`pb-4 ${sectionIdx > 0 ? 'pt-4' : ''} ${sectionIdx < sections.length - 1 ? 'border-b border-white/10' : ''}`}
+                >
+                  <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium opacity-90">{section.name}</h3>
                     <button
-                      className="text-blue-200 hover:text-white text-xs"
+                      className="text-blue-200 hover:text-white text-xs cursor-pointer"
                       onClick={() => toggleSection(section.id)}
                     >
                       Toggle all
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 gap-1.5">
+                  <div className="grid grid-cols-1 gap-2">
                     {section.tags.map((tag) => (
                       <label
                         key={tag}
-                        className="flex items-center justify-between gap-3 p-1.5 rounded-lg hover:bg-white/5 cursor-pointer"
+                        className="flex items-center justify-between gap-3 p-2 rounded-lg hover:bg-white/5 cursor-pointer group"
                       >
-                        <span className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            className="accent-blue-400"
-                            checked={selectedTags.has(tag)}
-                            onChange={() => toggleTag(tag)}
-                          />
-                          {tag}
+                        <span className="flex items-center gap-3">
+                          <div className="relative">
+                            <input
+                              type="checkbox"
+                              className="sr-only peer"
+                              checked={selectedTags.has(tag)}
+                              onChange={() => toggleTag(tag)}
+                            />
+                            <div className="w-5 h-5 rounded border-2 border-zinc-600 bg-zinc-800/50 peer-checked:bg-blue-500 peer-checked:border-blue-500 transition-all flex items-center justify-center group-hover:border-zinc-500">
+                              <svg 
+                                className={`w-3 h-3 text-white transition-opacity ${selectedTags.has(tag) ? 'opacity-100' : 'opacity-0'}`}
+                                fill="none" 
+                                viewBox="0 0 24 24" 
+                                stroke="currentColor" 
+                                strokeWidth={3}
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          </div>
+                          <span className="text-sm">{tag}</span>
                         </span>
                         <span className="tag-count text-xs px-2 py-1 rounded-lg bg-white/10">
                           {getTagCount(tag)}
@@ -317,20 +350,26 @@ const PracticeMode: React.FC = () => {
               Select one problem to practice.
             </p>
 
-            <div className="flex-1 overflow-y-auto pr-2 space-y-6 scroll-smooth max-h-[420px]" style={{ scrollbarWidth: 'thin' }}>
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4 scroll-smooth max-h-[420px]" style={{ scrollbarWidth: 'thin' }}>
               {Object.keys(groupedPractical).length === 0 ? (
                 <div className="p-4 rounded-xl bg-white/5 text-sm opacity-80">
                   No coding problems yet. Create problems in Question Maker to see them here.
                 </div>
               ) : (
-                Object.entries(groupedPractical).map(([sectionName, lessons], idx) => (
-                  <div key={sectionName} className={idx > 0 ? 'mt-6' : ''}>
-                    <h3 className="text-xs font-medium opacity-75 mb-2">
+                Object.entries(groupedPractical).map(([sectionName, lessons], idx, arr) => (
+                  <div 
+                    key={sectionName} 
+                    className={`pb-4 ${idx > 0 ? 'pt-4' : ''} ${idx < arr.length - 1 ? 'border-b border-white/10' : ''}`}
+                  >
+                    <h3 className="text-xs font-semibold text-white/80 mb-4 uppercase tracking-wider">
                       {sectionName}
                     </h3>
-                    {Object.entries(lessons).map(([lessonName, questions]) => (
-                      <div key={lessonName} className="space-y-1.5 pl-2 mt-3">
-                        <h4 className="text-xs font-medium opacity-75 mb-2">{lessonName}</h4>
+                    {Object.entries(lessons).map(([lessonName, questions], lessonIdx) => (
+                      <div 
+                        key={lessonName} 
+                        className={`pl-3 ${lessonIdx > 0 ? 'mt-4 pt-3 border-t border-white/5' : ''}`}
+                      >
+                        <h4 className="text-xs font-medium opacity-70 mb-3">{lessonName}</h4>
                         <div className="space-y-1.5">
                           {questions.map((question) => {
                             const isSelected = selectedPractical === question.id;
@@ -423,10 +462,10 @@ const PracticeMode: React.FC = () => {
             {selectedPractical && (
               <div className="mt-3 flex items-center justify-end gap-2">
                 <button
-                  onClick={() => setSelectedPractical(null)}
-                  className="px-4 py-1.5 text-sm rounded-xl bg-white/5 hover:bg-white/10 transition cursor-pointer"
+                  onClick={() => setShowResetModal(true)}
+                  className="px-4 py-1.5 text-sm rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 transition cursor-pointer"
                 >
-                  Clear Selection
+                  Reset Problem
                 </button>
                 <button
                   onClick={handleStartPractical}
@@ -499,6 +538,53 @@ const PracticeMode: React.FC = () => {
           </GlassCard>
         )}
       </div>
+
+      {/* Reset Problem Confirmation Modal */}
+      {showResetModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-700 rounded-2xl p-6 w-[420px] shadow-2xl">
+            <div className="flex items-start gap-4 mb-4">
+              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-red-500/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white mb-1">Reset Problem Progress</h3>
+                <p className="text-sm text-zinc-400">
+                  This will reset all your progress on this problem, including your code changes and submission history. The problem will be restored to its original state as published by the author.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-3 mt-6">
+              <button
+                onClick={() => setShowResetModal(false)}
+                disabled={isResetting}
+                className="px-4 py-2 text-sm rounded-xl bg-zinc-800 hover:bg-zinc-700 transition cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetPractical}
+                disabled={isResetting}
+                className="px-4 py-2 text-sm rounded-xl bg-red-600 hover:bg-red-500 text-white font-medium transition cursor-pointer disabled:opacity-50 flex items-center gap-2"
+              >
+                {isResetting ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Resetting...
+                  </>
+                ) : (
+                  'I Understand, Proceed'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

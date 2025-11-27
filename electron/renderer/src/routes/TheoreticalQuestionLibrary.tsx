@@ -24,17 +24,24 @@ interface EditableChoice {
   isCorrect: boolean;
 }
 
+interface EditImageItem {
+  id: string;
+  name: string;
+  dataUrl: string;
+}
+
 interface EditModalState {
   record: TheoreticalQuestionRecord;
   sectionKey: string;
   lesson: string;
   question: string;
+  author: string;
+  isPreviousExam: boolean;
+  examSchoolYear: string;
+  examSemester: string;
   choices: EditableChoice[];
-  imageDataUrl: string | null;
-  imagePreview: string | null;
-  imageFileName: string | null;
+  images: EditImageItem[];
   imageDirty: boolean;
-  removeImage: boolean;
   imageError: string | null;
   submitError: string | null;
   isSubmitting: boolean;
@@ -54,6 +61,7 @@ interface FeedbackState {
 
 const MIN_CHOICES = 6;
 const MAX_CHOICES = 10;
+const MAX_EDIT_IMAGES = 5;
 
 const groupQuestions = (questions: TheoreticalQuestionRecord[]): GroupedSection[] => {
   const sectionMap = new Map<string, GroupedSection>();
@@ -153,17 +161,25 @@ const TheoreticalQuestionLibrary: React.FC = () => {
           )
         : Array.from({ length: MIN_CHOICES }, () => createBlankChoice());
 
+    // Convert imageDataUrls array to EditImageItem array
+    const existingImages: EditImageItem[] = (record.imageDataUrls ?? []).map((url, index) => ({
+      id: `existing-${index}-${Date.now()}`,
+      name: `image-${index + 1}`,
+      dataUrl: url,
+    }));
+
     setEditState({
       record,
       sectionKey: record.sectionKey,
       lesson: record.lesson,
       question: record.question,
+      author: record.author ?? '',
+      isPreviousExam: record.isPreviousExam ?? false,
+      examSchoolYear: record.examSchoolYear ?? '',
+      examSemester: record.examSemester ?? '',
       choices: editableChoices,
-      imageDataUrl: record.imageDataUrl ?? null,
-      imagePreview: record.imageDataUrl ?? null,
-      imageFileName: null,
+      images: existingImages,
       imageDirty: false,
-      removeImage: false,
       imageError: null,
       submitError: null,
       isSubmitting: false,
@@ -199,6 +215,31 @@ const TheoreticalQuestionLibrary: React.FC = () => {
 
   const handleEditQuestionChange = (value: string) => {
     setEditState((prev) => (prev ? { ...prev, question: value } : prev));
+  };
+
+  const handleEditAuthorChange = (value: string) => {
+    setEditState((prev) => (prev ? { ...prev, author: value } : prev));
+  };
+
+  const handleTogglePreviousExam = (checked: boolean) => {
+    setEditState((prev) =>
+      prev
+        ? {
+            ...prev,
+            isPreviousExam: checked,
+            examSchoolYear: checked ? prev.examSchoolYear : '',
+            examSemester: checked ? prev.examSemester : '',
+          }
+        : prev
+    );
+  };
+
+  const handleExamSemesterChange = (value: string) => {
+    setEditState((prev) => (prev ? { ...prev, examSemester: value } : prev));
+  };
+
+  const handleExamSchoolYearChange = (value: string) => {
+    setEditState((prev) => (prev ? { ...prev, examSchoolYear: value } : prev));
   };
 
   const handleChoiceTextChange = (id: string, value: string) => {
@@ -255,6 +296,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
     !!editState &&
     !!editState.sectionKey &&
     !!editState.lesson &&
+    editState.author.trim().length > 0 &&
     editState.question.trim().length > 0 &&
     editState.choices.length >= MIN_CHOICES &&
     editState.choices.every((choice) => choice.text.trim().length > 0) &&
@@ -267,6 +309,20 @@ const TheoreticalQuestionLibrary: React.FC = () => {
   const handleEditImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    
+    // Check if we've reached max images
+    if (editState && editState.images.length >= MAX_EDIT_IMAGES) {
+      setEditState((prev) =>
+        prev
+          ? {
+              ...prev,
+              imageError: `Maximum ${MAX_EDIT_IMAGES} images allowed.`,
+            }
+          : prev
+      );
+      event.target.value = "";
+      return;
+    }
 
     if (!["image/png", "image/jpeg"].includes(file.type)) {
       setEditState((prev) =>
@@ -297,15 +353,20 @@ const TheoreticalQuestionLibrary: React.FC = () => {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = typeof reader.result === "string" ? reader.result : null;
+      if (!dataUrl) return;
+      
+      const newImage: EditImageItem = {
+        id: `img-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+        name: file.name,
+        dataUrl,
+      };
+      
       setEditState((prev) =>
         prev
           ? {
               ...prev,
-              imageDataUrl: dataUrl,
-              imagePreview: dataUrl,
-              imageFileName: file.name,
+              images: [...prev.images, newImage],
               imageDirty: true,
-              removeImage: false,
               imageError: null,
             }
           : prev
@@ -315,23 +376,37 @@ const TheoreticalQuestionLibrary: React.FC = () => {
     event.target.value = "";
   };
 
-  const handleRemoveEditImage = () => {
+  const handleRemoveEditImage = (imageId: string) => {
     setEditState((prev) =>
       prev
         ? {
             ...prev,
-            imageDataUrl: null,
-            imagePreview: null,
-            imageFileName: null,
+            images: prev.images.filter(img => img.id !== imageId),
             imageDirty: true,
-            removeImage: true,
             imageError: null,
           }
         : prev
     );
-    if (editFileInputRef.current) {
-      editFileInputRef.current.value = "";
-    }
+  };
+
+  const handleMoveEditImageUp = (index: number) => {
+    if (index === 0) return;
+    setEditState((prev) => {
+      if (!prev) return prev;
+      const newImages = [...prev.images];
+      [newImages[index - 1], newImages[index]] = [newImages[index], newImages[index - 1]];
+      return { ...prev, images: newImages, imageDirty: true };
+    });
+  };
+
+  const handleMoveEditImageDown = (index: number) => {
+    if (!editState || index === editState.images.length - 1) return;
+    setEditState((prev) => {
+      if (!prev) return prev;
+      const newImages = [...prev.images];
+      [newImages[index], newImages[index + 1]] = [newImages[index + 1], newImages[index]];
+      return { ...prev, images: newImages, imageDirty: true };
+    });
   };
 
   const handleSubmitEdit = async () => {
@@ -343,23 +418,23 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       sectionKey: editState.sectionKey,
       lesson: editState.lesson,
       question: editState.question.replace(/\r\n/g, "\n"),
+      author: editState.author.trim(),
       choices: editState.choices.map((choice) => ({
         text: choice.text.trim(),
         isCorrect: choice.isCorrect,
       })),
+      isPreviousExam: editState.isPreviousExam,
+      examSchoolYear: editState.isPreviousExam ? editState.examSchoolYear : undefined,
+      examSemester: editState.isPreviousExam ? editState.examSemester : undefined,
     };
 
+    // Handle multi-image update
     if (editState.imageDirty) {
-      if (editState.removeImage) {
-        payload.image = null;
-      } else if (editState.imageDataUrl) {
-        payload.image = {
-          name: editState.imageFileName ?? "embedded-image",
-          dataUrl: editState.imageDataUrl,
-        };
-      } else {
-        payload.image = null;
-      }
+      payload.images = editState.images.map((img, index) => ({
+        name: img.name,
+        dataUrl: img.dataUrl,
+        order: index,
+      }));
     }
 
     setEditState((prev) => (prev ? { ...prev, isSubmitting: true, submitError: null } : prev));
@@ -479,16 +554,16 @@ const TheoreticalQuestionLibrary: React.FC = () => {
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin scrollbar-track-neutral-900 scrollbar-thumb-neutral-700 hover:scrollbar-thumb-neutral-600">
-            <div className="space-y-10">
-            {groupedQuestions.map((section) => (
-              <div key={section.sectionKey} className="space-y-6">
+            <div>
+            {groupedQuestions.map((section, sectionIdx) => (
+              <div key={section.sectionKey} className={`space-y-8 ${sectionIdx > 0 ? 'mt-16 pt-8 border-t border-neutral-800' : ''}`}>
                 <div>
                   <h2 className="text-xl font-semibold text-white">{section.section}</h2>
                   <div className="mt-1 h-0.5 w-16 bg-neutral-700" />
                 </div>
                 {section.lessons.map((lesson) => (
-                  <div key={`${section.sectionKey}-${lesson.lesson}`} className="space-y-4 mt-8">
-                    <div className="flex items-center justify-between">
+                  <div key={`${section.sectionKey}-${lesson.lesson}`} className="mt-6 space-y-4">
+                    <div className="flex items-center justify-between mb-3">
                       <h3 className="text-lg font-medium text-neutral-200">{lesson.lesson}</h3>
                       <span className="text-xs uppercase tracking-wide text-neutral-500">
                         {lesson.questions.length} card{lesson.questions.length === 1 ? "" : "s"}
@@ -521,12 +596,19 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                             {question.question}
                           </div>
 
-                          {question.imageDataUrl && (
-                            <img
-                              src={question.imageDataUrl}
-                              alt="Question attachment"
-                              className="max-h-48 w-full rounded-lg object-contain bg-neutral-950"
-                            />
+                          {question.imageDataUrls && question.imageDataUrls.length > 0 && (
+                            <div className="relative">
+                              <img
+                                src={question.imageDataUrls[0]}
+                                alt="Question attachment"
+                                className="max-h-48 w-full rounded-lg object-contain bg-neutral-950"
+                              />
+                              {question.imageDataUrls.length > 1 && (
+                                <span className="absolute top-2 right-2 px-2 py-1 bg-neutral-900/80 rounded-md text-xs text-neutral-400">
+                                  +{question.imageDataUrls.length - 1} more
+                                </span>
+                              )}
+                            </div>
                           )}
 
                           <div className="flex flex-col gap-2">
@@ -669,7 +751,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                     onChange={(event) => handleEditLessonChange(event.target.value)}
                     className="mt-2 w-full rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm text-neutral-200 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 cursor-pointer"
                   >
-                    {getLessonOptions(editState.sectionKey).map((lesson) => (
+                {getLessonOptions(editState.sectionKey).map((lesson) => (
                       <option key={lesson} value={lesson}>
                         {lesson}
                       </option>
@@ -678,12 +760,78 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                 </div>
               </div>
 
+              <div>
+                <label htmlFor="edit-author" className="block text-sm font-medium text-neutral-200">
+                  Question Author <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  id="edit-author"
+                  type="text"
+                  value={editState.author}
+                  onChange={(event) => handleEditAuthorChange(event.target.value)}
+                  placeholder="e.g. Jane Doe"
+                  className="mt-2 w-full rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm text-neutral-200 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 placeholder:text-neutral-600"
+                />
+              </div>
+
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editState.isPreviousExam}
+                    onChange={(event) => handleTogglePreviousExam(event.target.checked)}
+                    className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 text-emerald-500 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span className="text-sm font-medium text-neutral-200">
+                    This question was part of a previous DSA exam
+                  </span>
+                </label>
+
+                {editState.isPreviousExam && (
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2 pl-7">
+                    <div>
+                      <label htmlFor="edit-exam-semester" className="block text-sm font-medium text-neutral-200">
+                        Semester <span className="text-neutral-500">(optional)</span>
+                      </label>
+                      <select
+                        id="edit-exam-semester"
+                        value={editState.examSemester}
+                        onChange={(event) => handleExamSemesterChange(event.target.value)}
+                        className="mt-2 w-full rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm text-neutral-200 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 cursor-pointer"
+                      >
+                        <option value="">Select semester</option>
+                        <option value="1st">1st Semester</option>
+                        <option value="2nd">2nd Semester</option>
+                        <option value="Summer">Summer</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="edit-exam-year" className="block text-sm font-medium text-neutral-200">
+                        Year <span className="text-neutral-500">(optional)</span>
+                      </label>
+                      <select
+                        id="edit-exam-year"
+                        value={editState.examSchoolYear}
+                        onChange={(event) => handleExamSchoolYearChange(event.target.value)}
+                        className="mt-2 w-full rounded-md border border-neutral-800 bg-neutral-950 px-4 py-2 text-sm text-neutral-200 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500 cursor-pointer"
+                      >
+                        <option value="">Select year</option>
+                        {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map((year) => (
+                          <option key={year} value={year.toString()}>{year}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-col gap-3">
                 <div className="inline-flex items-center gap-3">
                   <button
                     type="button"
                     onClick={handleEditImageButton}
-                    className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+                    disabled={editState.images.length >= MAX_EDIT_IMAGES}
+                    className="inline-flex items-center gap-2 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
@@ -699,10 +847,10 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                       <path d="M5 12h14" />
                       <rect x="3" y="3" width="18" height="18" ry="2" />
                     </svg>
-                    {editState.imagePreview ? "Replace Image" : "Add Image"}
+                    Add Image ({editState.images.length}/{MAX_EDIT_IMAGES})
                   </button>
                   <span className="text-xs text-neutral-500">
-                    Optional PNG or JPG to accompany the prompt.
+                    Optional PNG or JPG images (up to {MAX_EDIT_IMAGES}).
                   </span>
                 </div>
                 <input
@@ -719,23 +867,59 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                   </div>
                 )}
 
-                {editState.imagePreview && (
-                  <div className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
-                    <div className="flex items-center justify-between border-b border-neutral-800 px-4 py-2 text-xs text-neutral-400">
-                      <span>{editState.imageFileName ?? "existing-image"}</span>
-                      <button
-                        type="button"
-                        onClick={handleRemoveEditImage}
-                        className="inline-flex items-center gap-1 rounded-md border border-neutral-800 px-2 py-1 text-[11px] font-medium uppercase tracking-wide text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+                {editState.images.length > 0 && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {editState.images.map((img, index) => (
+                      <div
+                        key={img.id}
+                        className="overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950"
                       >
-                        Remove
-                      </button>
-                    </div>
-                    <img
-                      src={editState.imagePreview}
-                      alt="Question attachment preview"
-                      className="max-h-64 w-full object-contain bg-neutral-950"
-                    />
+                        <div className="flex items-center justify-between border-b border-neutral-800 px-3 py-2 text-xs text-neutral-400">
+                          <span className="truncate flex-1" title={img.name}>
+                            {index + 1}. {img.name}
+                          </span>
+                          <div className="flex items-center gap-1 ml-2">
+                            <button
+                              type="button"
+                              onClick={() => handleMoveEditImageUp(index)}
+                              disabled={index === 0}
+                              className="p-1 rounded text-neutral-500 hover:text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move up"
+                            >
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleMoveEditImageDown(index)}
+                              disabled={index === editState.images.length - 1}
+                              className="p-1 rounded text-neutral-500 hover:text-neutral-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                              title="Move down"
+                            >
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveEditImage(img.id)}
+                              className="p-1 rounded text-neutral-500 hover:text-red-400"
+                              title="Remove"
+                            >
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                        <img
+                          src={img.dataUrl}
+                          alt={`Question attachment ${index + 1}`}
+                          className="max-h-40 w-full object-contain bg-neutral-950"
+                        />
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

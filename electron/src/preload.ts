@@ -26,6 +26,7 @@ export interface QuestionCounts {
 export interface ImagePayload {
   name: string;
   dataUrl: string;
+  order?: number;
 }
 
 export interface ChoicePayload {
@@ -37,8 +38,13 @@ export interface CreateTheoreticalQuestionPayload {
   question: string;
   section: string;
   lesson: string;
+  author: string;
   choices: ChoicePayload[];
   image?: ImagePayload | null;
+  images?: ImagePayload[];
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface CreateQuestionResult {
@@ -61,11 +67,16 @@ export interface TheoreticalQuestionRecord {
   lesson: string;
   filePath: string;
   question: string;
+  author?: string;
   choices: Array<{ text: string; isCorrect: boolean }>;
   correctCount: number;
   imageDataUrl?: string | null;
+  imageDataUrls?: string[];
   createdAt?: string;
   updatedAt?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface UpdateTheoreticalQuestionPayload {
@@ -73,9 +84,14 @@ export interface UpdateTheoreticalQuestionPayload {
   filePath: string;
   sectionKey: string;
   lesson: string;
+  author: string;
   question: string;
   choices: ChoicePayload[];
   image?: ImagePayload | null;
+  images?: ImagePayload[];
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface DeleteTheoreticalQuestionPayload {
@@ -110,9 +126,14 @@ export interface CreatePracticalQuestionPayload {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   section: string;
   lesson: string;
+  author?: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
   image?: ImagePayload | null;
+  images?: ImagePayload[];
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface PracticalQuestionRecord {
@@ -123,12 +144,17 @@ export interface PracticalQuestionRecord {
   sectionKey: string;
   section: string;
   lesson: string;
+  author?: string;
   filePath: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
   imageDataUrl?: string | null;
+  imageDataUrls?: string[];
   createdAt?: string;
   updatedAt?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface UpdatePracticalQuestionPayload {
@@ -139,9 +165,14 @@ export interface UpdatePracticalQuestionPayload {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   sectionKey: string;
   lesson: string;
+  author?: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
   image?: ImagePayload | null;
+  images?: ImagePayload[];
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 }
 
 export interface DeletePracticalQuestionPayload {
@@ -231,6 +262,7 @@ export interface ElectronAPI {
   openPracticalProblem: (questionId: string) => void;
   getCurrentPracticalQuestion: () => Promise<any>;
   savePracticalProgress: (payload: any) => Promise<void>;
+  resetPracticalProgress: (payload: { questionId: string }) => Promise<{ success: boolean }>;
   runPracticalCode: (payload: any) => Promise<any>;
   submitPracticalSolution: (payload: any) => Promise<any>;
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
@@ -239,6 +271,9 @@ export interface ElectronAPI {
   windowMaximize: () => void;
   windowClose: () => void;
   windowIsMaximized: () => Promise<boolean>;
+  // Settings APIs
+  getSettings: () => Promise<any>;
+  saveSettings: (settings: any) => Promise<any>;
 }
 
 const api: ElectronAPI = {
@@ -303,6 +338,7 @@ const api: ElectronAPI = {
   openPracticalProblem: (questionId: string) => ipcRenderer.send('open-practical-problem', questionId),
   getCurrentPracticalQuestion: () => ipcRenderer.invoke('get-current-practical-question'),
   savePracticalProgress: (payload) => ipcRenderer.invoke('save-practical-progress', payload),
+  resetPracticalProgress: (payload: { questionId: string }) => ipcRenderer.invoke('reset-practical-progress', payload),
   runPracticalCode: (payload) => ipcRenderer.invoke('run-practical-code', payload),
   submitPracticalSolution: (payload) => ipcRenderer.invoke('submit-practical-solution', payload),
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) =>
@@ -312,6 +348,9 @@ const api: ElectronAPI = {
   windowMaximize: () => ipcRenderer.send('window-maximize'),
   windowClose: () => ipcRenderer.send('window-close'),
   windowIsMaximized: () => ipcRenderer.invoke('window-is-maximized'),
+  // Settings APIs
+  getSettings: () => ipcRenderer.invoke('settings:get'),
+  saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
 };
 
 contextBridge.exposeInMainWorld('api', api);

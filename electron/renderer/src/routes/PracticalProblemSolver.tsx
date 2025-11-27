@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Editor } from '@monaco-editor/react';
 import { Play, Send, Save, X, ArrowLeft } from 'lucide-react';
 import Terminal from '../components/Terminal';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import '@xterm/xterm/css/xterm.css';
 
 interface CodeFile {
@@ -28,9 +30,14 @@ interface PracticalQuestion {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   section: string;
   lesson: string;
+  author?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
   files: CodeFile[];
   testCases: TestCase[];
   imageDataUrl?: string | null;
+  imageDataUrls?: string[];
 }
 
 interface TestResult {
@@ -73,10 +80,22 @@ const PracticalProblemSolver: React.FC = () => {
   const [score, setScore] = useState(0);
   const [maxScore, setMaxScore] = useState(0);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  
+  // Settings state
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
+  const [autoSaveInterval, setAutoSaveInterval] = useState(30); // seconds
+  const isDiscardingRef = useRef(false); // Flag to prevent saves when discarding
+  const isPendingCloseRef = useRef(false); // Flag to prevent saves when close modal is shown
 
   // Save function defined early for use in effects
   const saveCurrentFile = () => {
-    if (!selectedFile || !question || isSavingRef.current) return;
+    // Don't save if:
+    // - No file selected or no question loaded
+    // - Already saving
+    // - User is discarding changes
+    // - Close modal is showing (pending decision)
+    // - No unsaved changes
+    if (!selectedFile || !question || isSavingRef.current || isDiscardingRef.current || isPendingCloseRef.current || !hasUnsavedChanges) return;
 
     // Immediately update UI state for instant feedback (no IPC call blocking)
     isSavingRef.current = true;
@@ -110,16 +129,23 @@ const PracticalProblemSolver: React.FC = () => {
   // Keep ref updated with latest save function
   saveCurrentFileRef.current = saveCurrentFile;
 
+  // Load settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const settings = await window.api.getSettings();
+        setAutoSaveEnabled(settings.autoSaveEnabled);
+        setAutoSaveInterval(settings.autoSaveInterval);
+      } catch (error) {
+        console.error('Failed to load settings:', error);
+      }
+    };
+    loadSettings();
+  }, []);
+
   useEffect(() => {
     // Load question data when component mounts
     loadQuestion();
-
-    // Set up periodic auto-save every 5 minutes
-    periodicSaveTimerRef.current = setInterval(() => {
-      if (hasUnsavedChanges && !isSavingRef.current) {
-        saveCurrentFile();
-      }
-    }, 5 * 60 * 1000); // 5 minutes
 
     // Set up Ctrl+S keyboard shortcut
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -142,6 +168,29 @@ const PracticalProblemSolver: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
+
+  // Set up periodic auto-save based on settings
+  useEffect(() => {
+    // Clear existing timer
+    if (periodicSaveTimerRef.current) {
+      clearInterval(periodicSaveTimerRef.current);
+      periodicSaveTimerRef.current = null;
+    }
+
+    // Only set up auto-save if enabled
+    if (autoSaveEnabled && autoSaveInterval > 0) {
+      periodicSaveTimerRef.current = setInterval(() => {
+        // Use ref to call the latest save function and check conditions
+        saveCurrentFileRef.current?.();
+      }, autoSaveInterval * 1000);
+    }
+
+    return () => {
+      if (periodicSaveTimerRef.current) {
+        clearInterval(periodicSaveTimerRef.current);
+      }
+    };
+  }, [autoSaveEnabled, autoSaveInterval]);
 
   // Handle terminal data from backend
   useEffect(() => {
@@ -216,11 +265,22 @@ const PracticalProblemSolver: React.FC = () => {
       setMaxScore(Array.isArray(questionData.testCases) ? questionData.testCases.length : 0);
       setShowSuccessModal(false);
       
-      // Initialize ALL files (including hidden) - blank out answer files
-      const allFilesWithContent = questionData.files.map((f: CodeFile) => ({
-        ...f,
-        content: f.isAnswerFile ? '// Put your answer here\n' : f.content,
-      }));
+      // Initialize ALL files (including hidden)
+      // For answer files: use saved content if it exists (backend loads it), 
+      // otherwise use default placeholder
+      const DEFAULT_ANSWER_CONTENT = '// Put your answer here\n';
+      const allFilesWithContent = questionData.files.map((f: CodeFile) => {
+        if (f.isAnswerFile) {
+          // If the file has meaningful content (not empty or just whitespace), use it
+          // This means the backend loaded saved progress
+          const hasContent = f.content && f.content.trim().length > 0;
+          return {
+            ...f,
+            content: hasContent ? f.content : DEFAULT_ANSWER_CONTENT,
+          };
+        }
+        return { ...f };
+      });
       
       setAllFiles(allFilesWithContent);
       
@@ -532,6 +592,17 @@ const PracticalProblemSolver: React.FC = () => {
 
   const handleClose = () => {
     if (hasUnsavedChanges) {
+      // Set flag to prevent auto-saves while modal is shown
+      isPendingCloseRef.current = true;
+      // Clear any pending auto-save timers
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+        autoSaveTimerRef.current = null;
+      }
+      if (periodicSaveTimerRef.current) {
+        clearInterval(periodicSaveTimerRef.current);
+        periodicSaveTimerRef.current = null;
+      }
       setShowUnsavedModal(true);
       return;
     }
@@ -539,11 +610,15 @@ const PracticalProblemSolver: React.FC = () => {
   };
 
   const handleConfirmClose = () => {
+    // Set flag to prevent any auto-saves from running
+    isDiscardingRef.current = true;
     setShowUnsavedModal(false);
     window.close();
   };
 
   const handleCancelClose = () => {
+    // User wants to keep editing, re-enable auto-save
+    isPendingCloseRef.current = false;
     setShowUnsavedModal(false);
   };
 
@@ -613,22 +688,85 @@ const PracticalProblemSolver: React.FC = () => {
             <ArrowLeft size={14} />
             Back to Practice
           </button>
-          <h2 className="text-lg font-semibold mb-2">{question.title}</h2>
+          <h2 className="text-xl font-bold mb-1">{question.title}</h2>
+          {question.author && (
+            <div className="text-xs text-neutral-400 mb-2">
+              by {question.author}
+            </div>
+          )}
+          {question.isPreviousExam && (
+            <div className="mb-3">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4 text-emerald-400"
+                >
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
+                  <path d="M6 12v5c3 3 9 3 12 0v-5" />
+                </svg>
+                <span className="text-xs font-medium text-emerald-400">
+                  Previous DSA Exam
+                  {(question.examSchoolYear || question.examSemester) && (
+                    <span className="text-emerald-500/70 ml-1">
+                      ({[question.examSchoolYear, question.examSemester].filter(Boolean).join(' • ')})
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="text-sm opacity-80 mb-4">
-            <div className="mb-1">{question.section} / {question.lesson}</div>
-            <div className={getDifficultyColor(question.difficulty)}>
-              {question.difficulty}
+            <div>{question.section} / {question.lesson}</div>
+          </div>
+
+          <div className="mb-4">
+            <h3 className="text-base font-semibold mb-2">Description</h3>
+            <div className="prose prose-invert prose-sm max-w-none prose-p:text-neutral-300 prose-code:bg-zinc-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-emerald-400 prose-pre:bg-zinc-900 prose-pre:border prose-pre:border-zinc-700 prose-a:text-blue-400 prose-strong:text-neutral-200 prose-ul:text-neutral-300 prose-ol:text-neutral-300 prose-li:text-neutral-300">
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h1: ({ children }) => <h1 className="text-xl font-bold text-blue-400 mb-3 mt-4">{children}</h1>,
+                  h2: ({ children }) => <h2 className="text-lg font-bold text-blue-500 mb-2 mt-3">{children}</h2>,
+                  h3: ({ children }) => <h3 className="text-base font-bold text-violet-400 mb-2 mt-3">{children}</h3>,
+                  h4: ({ children }) => <h4 className="text-sm font-bold text-violet-500 mb-1 mt-2">{children}</h4>,
+                  h5: ({ children }) => <h5 className="text-sm font-bold text-purple-400 mb-1 mt-2">{children}</h5>,
+                  h6: ({ children }) => <h6 className="text-xs font-bold text-purple-500 mb-1 mt-2">{children}</h6>,
+                }}
+              >
+                {question.description}
+              </ReactMarkdown>
             </div>
           </div>
 
-          <div className="prose prose-invert prose-sm max-w-none mb-4">
-            <h3 className="text-sm font-semibold mb-2">Description</h3>
-            <p className="text-xs whitespace-pre-wrap opacity-90">
-              {question.description}
-            </p>
-          </div>
+          {/* Separator between description and reference images */}
+          {((question.imageDataUrls && question.imageDataUrls.length > 0) || question.imageDataUrl) && (
+            <div className="border-t border-zinc-700/50 my-4"></div>
+          )}
 
-          {question.imageDataUrl && (
+          {/* Display multiple images if available, otherwise fall back to single image */}
+          {(question.imageDataUrls && question.imageDataUrls.length > 0) ? (
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold mb-2">
+                Reference Image{question.imageDataUrls.length > 1 ? 's' : ''}
+              </h3>
+              <div className="space-y-3">
+                {question.imageDataUrls.map((imgUrl, index) => (
+                  <img
+                    key={index}
+                    src={imgUrl}
+                    alt={`Problem reference ${index + 1}`}
+                    className="w-full rounded border border-zinc-700"
+                  />
+                ))}
+              </div>
+            </div>
+          ) : question.imageDataUrl && (
             <div className="mb-4">
               <h3 className="text-sm font-semibold mb-2">Reference Image</h3>
               <img

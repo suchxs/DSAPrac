@@ -52,13 +52,18 @@ type ProgressData = {
 };
 
 type ChoicePayload = { text: string; isCorrect: boolean };
-type ImagePayload = { name: string; dataUrl: string };
+type ImagePayload = { name: string; dataUrl: string; order?: number };
 type CreateTheoreticalQuestionPayload = {
   question: string;
   section: string;
   lesson: string;
+  author: string;
   choices: ChoicePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;  // Legacy single image support
+  images?: ImagePayload[];      // New multiple images support
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 };
 
 type QuestionCounts = { theoretical: number; practical: number };
@@ -70,11 +75,16 @@ type TheoreticalQuestionRecord = {
   lesson: string;
   filePath: string;
   question: string;
+  author?: string;
   choices: ListedChoice[];
   correctCount: number;
-  imageDataUrl?: string | null;
+  imageDataUrl?: string | null;   // Legacy single image
+  imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
   updatedAt?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 };
 
 type UpdateTheoreticalQuestionPayload = {
@@ -83,15 +93,19 @@ type UpdateTheoreticalQuestionPayload = {
   sectionKey: string;
   lesson: string;
   question: string;
+  author?: string;
   choices: ChoicePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;    // Legacy single image support
+  images?: ImagePayload[];        // New multiple images support
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 };
 
 type DeleteTheoreticalQuestionPayload = {
   id: string;
   filePath: string;
 };
-
 type TestCasePayload = {
   input: string;
   expectedOutput: string;
@@ -115,9 +129,14 @@ type CreatePracticalQuestionPayload = {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   section: string;
   lesson: string;
+  author?: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;    // Legacy single image support
+  images?: ImagePayload[];        // New multiple images support
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 };
 
 type PracticalQuestionRecord = {
@@ -128,12 +147,17 @@ type PracticalQuestionRecord = {
   sectionKey: string;
   section: string;
   lesson: string;
+  author?: string;
   filePath: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
-  imageDataUrl?: string | null;
+  imageDataUrl?: string | null;   // Legacy single image
+  imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
   updatedAt?: string;
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 };
 
 type UpdatePracticalQuestionPayload = {
@@ -144,9 +168,14 @@ type UpdatePracticalQuestionPayload = {
   difficulty: 'Easy' | 'Medium' | 'Hard';
   sectionKey: string;
   lesson: string;
+  author?: string;
   files: CodeFilePayload[];
   testCases: TestCasePayload[];
-  image?: ImagePayload | null;
+  image?: ImagePayload | null;    // Legacy single image support
+  images?: ImagePayload[];        // New multiple images support
+  isPreviousExam?: boolean;
+  examSchoolYear?: string;
+  examSemester?: string;
 };
 
 type DeletePracticalQuestionPayload = {
@@ -199,6 +228,39 @@ function getUserDataDir(): string {
 
 function getProgressPath(): string {
   return path.join(getUserDataDir(), 'progress.json');
+}
+
+function getSettingsPath(): string {
+  return path.join(getUserDataDir(), 'settings.json');
+}
+
+interface AppSettings {
+  autoSaveEnabled: boolean;
+  autoSaveInterval: number; // in seconds
+}
+
+const DEFAULT_SETTINGS: AppSettings = {
+  autoSaveEnabled: true,
+  autoSaveInterval: 30,
+};
+
+function readSettings(): AppSettings {
+  const settingsPath = getSettingsPath();
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const data = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+      return { ...DEFAULT_SETTINGS, ...data };
+    }
+  } catch (error) {
+    console.error('Failed to read settings:', error);
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
+function writeSettings(settings: AppSettings): void {
+  const settingsPath = getSettingsPath();
+  ensureDirExists(path.dirname(settingsPath));
+  fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
 }
 
 function ensureDirExists(dirPath: string) {
@@ -383,7 +445,8 @@ function broadcastDataRefresh(payload: { counts: QuestionCounts; progress: Progr
 }
 
 function parseImageDataUrl(dataUrl: string): { buffer: Buffer; extension: string } {
-  const match = /^data:(image\/(png|jpeg));base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  // More permissive regex that handles edge cases with long base64 strings
+  const match = /^data:(image\/(png|jpeg));base64,(.+)$/s.exec(dataUrl);
   if (!match) {
     throw new Error('INVALID_IMAGE_DATA');
   }
@@ -489,6 +552,45 @@ function parseChoicesFromFrontmatter(lines: string[], startIndex: number): {
   return { choices, nextIndex: idx };
 }
 
+function parseImagesFromFrontmatter(lines: string[], startIndex: number): {
+  images: string[];
+  nextIndex: number;
+} {
+  const images: string[] = [];
+  let idx = startIndex;
+
+  while (idx < lines.length) {
+    const line = lines[idx];
+    const trimmed = line.trim();
+    if (!trimmed) {
+      idx += 1;
+      continue;
+    }
+
+    // Check if this is a list item
+    if (trimmed.startsWith('-')) {
+      // Extract the quoted filename
+      const match = trimmed.match(/-\s*"([^"]+)"/);
+      if (match) {
+        images.push(match[1]);
+      } else {
+        // Try without quotes
+        const simpleMatch = trimmed.match(/-\s*(\S+)/);
+        if (simpleMatch) {
+          images.push(simpleMatch[1]);
+        }
+      }
+      idx += 1;
+      continue;
+    }
+
+    // If we hit a non-list-item line, we're done with the images array
+    break;
+  }
+
+  return { images, nextIndex: idx };
+}
+
 function parseTheoreticalQuestionFile(filePath: string): {
   meta: Record<string, unknown>;
   body: string;
@@ -517,6 +619,18 @@ function parseTheoreticalQuestionFile(filePath: string): {
       meta.choices = choices;
       idx = nextIndex;
       continue;
+    }
+
+    if (trimmed.startsWith('images:')) {
+      // Check if there's a value on the same line (inline array not supported, but handle empty)
+      const valuePart = trimmed.slice(7).trim(); // 7 = 'images:'.length
+      if (!valuePart) {
+        // Multi-line array format
+        const { images, nextIndex } = parseImagesFromFrontmatter(lines, idx + 1);
+        meta.images = images;
+        idx = nextIndex;
+        continue;
+      }
     }
 
     const colonIndex = trimmed.indexOf(':');
@@ -808,6 +922,18 @@ app.whenReady().then(() => {
     });
   });
 
+  // Settings IPC
+  ipcMain.handle('settings:get', () => {
+    return readSettings();
+  });
+
+  ipcMain.handle('settings:save', (_evt, partialSettings: Partial<AppSettings>) => {
+    const currentSettings = readSettings();
+    const newSettings = { ...currentSettings, ...partialSettings };
+    writeSettings(newSettings);
+    return newSettings;
+  });
+
   // Progress IPC
   ipcMain.handle('progress:get', () => {
     const progress = readProgress();
@@ -906,7 +1032,7 @@ app.whenReady().then(() => {
       throw new Error('Invalid payload received.');
     }
 
-    const { question, section, lesson, choices, image } = payload;
+    const { question, section, lesson, author, choices, image, images, isPreviousExam, examSchoolYear, examSemester } = payload;
 
     const sanitizedQuestion =
       typeof question === 'string' ? question.replace(/\r\n/g, '\n').trim() : '';
@@ -964,15 +1090,30 @@ app.whenReady().then(() => {
     const markdownFileName = `${questionId}.md`;
     const markdownPath = path.join(lessonDir, markdownFileName);
 
-    let imageFileName: string | undefined;
-    let imageFilePath: string | undefined;
+    const imageFileNames: string[] = [];
+    const imageFilePaths: string[] = [];
 
     try {
-      if (image && image.dataUrl) {
+      // Handle multiple images (new format)
+      if (images && Array.isArray(images) && images.length > 0) {
+        images.forEach((img, index) => {
+          if (img && img.dataUrl) {
+            const { buffer, extension } = parseImageDataUrl(img.dataUrl);
+            const imageFileName = `${questionId}-${index}.${extension}`;
+            const imageFilePath = path.join(lessonDir, imageFileName);
+            fs.writeFileSync(imageFilePath, buffer);
+            imageFileNames.push(imageFileName);
+            imageFilePaths.push(imageFilePath);
+          }
+        });
+      } else if (image && image.dataUrl) {
+        // Legacy single image support
         const { buffer, extension } = parseImageDataUrl(image.dataUrl);
-        imageFileName = `${questionId}.${extension}`;
-        imageFilePath = path.join(lessonDir, imageFileName);
+        const imageFileName = `${questionId}.${extension}`;
+        const imageFilePath = path.join(lessonDir, imageFileName);
         fs.writeFileSync(imageFilePath, buffer);
+        imageFileNames.push(imageFileName);
+        imageFilePaths.push(imageFilePath);
       }
 
       const frontmatterLines: string[] = [
@@ -980,14 +1121,33 @@ app.whenReady().then(() => {
         `id: ${questionId}`,
         `section: "${sectionDef.label}"`,
         `lesson: "${lesson}"`,
+        `author: "${author?.trim() || ''}"`,
         `created_at: "${createdAt}"`,
         `updated_at: "${createdAt}"`,
         `choice_count: ${normalizedChoices.length}`,
         `correct_count: ${correctCount}`,
       ];
 
-      if (imageFileName) {
-        frontmatterLines.push(`image: "${imageFileName}"`);
+      if (imageFileNames.length === 1) {
+        // Single image - use legacy format for backward compatibility
+        frontmatterLines.push(`image: "${imageFileNames[0]}"`);
+      } else if (imageFileNames.length > 1) {
+        // Multiple images - use new format
+        frontmatterLines.push('images:');
+        imageFileNames.forEach((fileName) => {
+          frontmatterLines.push(`  - "${fileName}"`);
+        });
+      }
+
+      // Add exam info if provided
+      if (isPreviousExam) {
+        frontmatterLines.push(`is_previous_exam: true`);
+        if (examSchoolYear?.trim()) {
+          frontmatterLines.push(`exam_school_year: "${examSchoolYear.trim()}"`);
+        }
+        if (examSemester?.trim()) {
+          frontmatterLines.push(`exam_semester: "${examSemester.trim()}"`);
+        }
       }
 
       frontmatterLines.push('choices:');
@@ -1016,13 +1176,16 @@ app.whenReady().then(() => {
         counts,
       };
     } catch (error) {
-      if (imageFilePath && fs.existsSync(imageFilePath)) {
-        try {
-          fs.unlinkSync(imageFilePath);
-        } catch {
-          // Ignore cleanup errors
+      // Cleanup images on error
+      imageFilePaths.forEach((imgPath) => {
+        if (fs.existsSync(imgPath)) {
+          try {
+            fs.unlinkSync(imgPath);
+          } catch {
+            // Ignore cleanup errors
+          }
         }
-      }
+      });
       if (fs.existsSync(markdownPath)) {
         try {
           fs.unlinkSync(markdownPath);
@@ -1076,7 +1239,33 @@ app.whenReady().then(() => {
                 : choices.filter((choice) => choice.isCorrect).length;
 
             let imageDataUrl: string | undefined;
-            if (typeof meta.image === 'string' && meta.image.trim()) {
+            let imageDataUrls: string[] | undefined;
+
+            // Check for multiple images (new format)
+            if (Array.isArray(meta.images) && meta.images.length > 0) {
+              imageDataUrls = [];
+              for (const imgFileName of meta.images) {
+                if (typeof imgFileName === 'string' && imgFileName.trim()) {
+                  const imagePath = path.join(lessonDir, imgFileName.trim());
+                  if (fs.existsSync(imagePath)) {
+                    const ext = path.extname(imgFileName).toLowerCase();
+                    const mime =
+                      ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg'
+                        ? 'image/jpeg'
+                        : null;
+                    if (mime) {
+                      const base64 = fs.readFileSync(imagePath, { encoding: 'base64' });
+                      imageDataUrls.push(`data:${mime};base64,${base64}`);
+                    }
+                  }
+                }
+              }
+              // Set first image as legacy imageDataUrl for backward compatibility
+              if (imageDataUrls.length > 0) {
+                imageDataUrl = imageDataUrls[0];
+              }
+            } else if (typeof meta.image === 'string' && meta.image.trim()) {
+              // Legacy single image support
               const imageFileName = (meta.image as string).trim();
               const imagePath = path.join(lessonDir, imageFileName);
               if (fs.existsSync(imagePath)) {
@@ -1088,9 +1277,16 @@ app.whenReady().then(() => {
                 if (mime) {
                   const base64 = fs.readFileSync(imagePath, { encoding: 'base64' });
                   imageDataUrl = `data:${mime};base64,${base64}`;
+                  imageDataUrls = [imageDataUrl];
                 }
               }
             }
+
+            // Read exam info
+            const isPreviousExam = meta.is_previous_exam === true;
+            const examSchoolYear = typeof meta.exam_school_year === 'string' ? meta.exam_school_year : undefined;
+            const examSemester = typeof meta.exam_semester === 'string' ? meta.exam_semester : undefined;
+            const author = typeof meta.author === 'string' ? meta.author : undefined;
 
             records.push({
               id,
@@ -1099,11 +1295,16 @@ app.whenReady().then(() => {
               lesson: lessonName,
               filePath,
               question: body,
+              author,
               choices,
               correctCount,
               imageDataUrl,
+              imageDataUrls,
               createdAt,
               updatedAt,
+              isPreviousExam,
+              examSchoolYear,
+              examSemester,
             });
           } catch (error) {
             console.warn(`Failed to load theoretical question at ${filePath}:`, error);
@@ -1168,15 +1369,27 @@ app.whenReady().then(() => {
     if (!isPathInside(baseDir, resolvedPath)) {
       throw new Error('Invalid question path.');
     }
-    if (!fs.existsSync(resolvedPath)) {
-      throw new Error('Question file not found.');
-    }
+      if (!fs.existsSync(resolvedPath)) {
+        throw new Error('Question file not found.');
+      }
 
     const { meta } = parseTheoreticalQuestionFile(resolvedPath);
 
-    const originalCreatedAt =
-      typeof meta.created_at === 'string' && meta.created_at.trim()
-        ? (meta.created_at as string).trim()
+    const existingAuthor =
+      typeof meta.author === 'string' && meta.author.trim()
+        ? (meta.author as string).trim()
+        : '';
+    const author =
+      typeof payload.author === 'string' && payload.author.trim()
+        ? payload.author.trim()
+        : existingAuthor;
+    if (!author) {
+      throw new Error('Author is required.');
+    }
+
+      const originalCreatedAt =
+        typeof meta.created_at === 'string' && meta.created_at.trim()
+          ? (meta.created_at as string).trim()
         : new Date().toISOString();
     const oldLessonName =
       typeof meta.lesson === 'string' && meta.lesson.trim()
@@ -1191,7 +1404,25 @@ app.whenReady().then(() => {
       typeof meta.image === 'string' && meta.image.trim()
         ? (meta.image as string).trim()
         : undefined;
-    const oldImagePath = oldImageName ? path.join(path.dirname(resolvedPath), oldImageName) : undefined;
+    const oldImagesArray = Array.isArray(meta.images) ? meta.images as string[] : [];
+    const oldImagePaths: string[] = [];
+    
+    // Collect all old image paths
+    if (oldImagesArray.length > 0) {
+      for (const imgName of oldImagesArray) {
+        if (typeof imgName === 'string' && imgName.trim()) {
+          const imgPath = path.join(path.dirname(resolvedPath), imgName.trim());
+          if (fs.existsSync(imgPath)) {
+            oldImagePaths.push(imgPath);
+          }
+        }
+      }
+    } else if (oldImageName) {
+      const imgPath = path.join(path.dirname(resolvedPath), oldImageName);
+      if (fs.existsSync(imgPath)) {
+        oldImagePaths.push(imgPath);
+      }
+    }
 
     const destDir = path.join(baseDir, slugify(sectionDef.label), slugify(payload.lesson));
     ensureDirExists(destDir);
@@ -1199,44 +1430,112 @@ app.whenReady().then(() => {
     const destPath = path.join(destDir, fileName);
 
     const nowIso = new Date().toISOString();
-    let newImageFileName = oldImageName;
-    let newImageFullPath = oldImagePath;
-    let wroteNewImage = false;
-    let copiedOldImage = false;
+    const newImageFileNames: string[] = [];
+    const newImageFilePaths: string[] = [];
 
     try {
-      if (payload.image === undefined) {
-        if (oldImagePath && path.dirname(oldImagePath) !== destDir) {
-          const destinationImagePath = path.join(destDir, oldImageName!);
-          fs.copyFileSync(oldImagePath, destinationImagePath);
-          newImageFileName = oldImageName;
-          newImageFullPath = destinationImagePath;
-          copiedOldImage = true;
+      // Handle multiple images (new format)
+      if (payload.images && Array.isArray(payload.images)) {
+        // Delete all old images first
+        for (const oldPath of oldImagePaths) {
+          if (fs.existsSync(oldPath)) {
+            try {
+              fs.unlinkSync(oldPath);
+            } catch {
+              // ignore cleanup errors
+            }
+          }
+        }
+        
+        // Write new images
+        payload.images.forEach((img, index) => {
+          if (img && img.dataUrl) {
+            const { buffer, extension } = parseImageDataUrl(img.dataUrl);
+            const imageFileName = `${payload.id}-${index}.${extension}`;
+            const imageFilePath = path.join(destDir, imageFileName);
+            fs.writeFileSync(imageFilePath, buffer);
+            newImageFileNames.push(imageFileName);
+            newImageFilePaths.push(imageFilePath);
+          }
+        });
+      } else if (payload.image === undefined) {
+        // Keep existing images - copy to new location if moving
+        if (oldImagePaths.length > 0 && path.dirname(oldImagePaths[0]) !== destDir) {
+          for (const oldPath of oldImagePaths) {
+            const imgName = path.basename(oldPath);
+            const destinationPath = path.join(destDir, imgName);
+            fs.copyFileSync(oldPath, destinationPath);
+            newImageFileNames.push(imgName);
+            newImageFilePaths.push(destinationPath);
+          }
+        } else {
+          // Keep old names
+          for (const oldPath of oldImagePaths) {
+            newImageFileNames.push(path.basename(oldPath));
+          }
         }
       } else if (payload.image === null) {
-        newImageFileName = undefined;
-        newImageFullPath = undefined;
-      } else {
+        // Remove all images
+        for (const oldPath of oldImagePaths) {
+          if (fs.existsSync(oldPath)) {
+            try {
+              fs.unlinkSync(oldPath);
+            } catch {
+              // ignore cleanup errors
+            }
+          }
+        }
+      } else if (payload.image) {
+        // Legacy single image update
+        for (const oldPath of oldImagePaths) {
+          if (fs.existsSync(oldPath)) {
+            try {
+              fs.unlinkSync(oldPath);
+            } catch {
+              // ignore cleanup errors
+            }
+          }
+        }
         const { buffer, extension } = parseImageDataUrl(payload.image.dataUrl);
-        newImageFileName = `${payload.id}.${extension}`;
-        newImageFullPath = path.join(destDir, newImageFileName);
-        fs.writeFileSync(newImageFullPath, buffer);
-        wroteNewImage = true;
+        const imageFileName = `${payload.id}.${extension}`;
+        const imageFilePath = path.join(destDir, imageFileName);
+        fs.writeFileSync(imageFilePath, buffer);
+        newImageFileNames.push(imageFileName);
+        newImageFilePaths.push(imageFilePath);
       }
 
-      const frontmatterLines: string[] = [
-        '---',
-        `id: ${payload.id}`,
-        `section: "${sectionDef.label}"`,
-        `lesson: "${payload.lesson}"`,
-        `created_at: "${originalCreatedAt}"`,
-        `updated_at: "${nowIso}"`,
-        `choice_count: ${normalizedChoices.length}`,
-        `correct_count: ${correctCount}`,
-      ];
+        const frontmatterLines: string[] = [
+          '---',
+          `id: ${payload.id}`,
+          `section: "${sectionDef.label}"`,
+          `lesson: "${payload.lesson}"`,
+          `author: "${author}"`,
+          `created_at: "${originalCreatedAt}"`,
+          `updated_at: "${nowIso}"`,
+          `choice_count: ${normalizedChoices.length}`,
+          `correct_count: ${correctCount}`,
+        ];
 
-      if (newImageFileName) {
-        frontmatterLines.push(`image: "${newImageFileName}"`);
+      if (newImageFileNames.length === 1) {
+        // Single image - use legacy format for backward compatibility
+        frontmatterLines.push(`image: "${newImageFileNames[0]}"`);
+      } else if (newImageFileNames.length > 1) {
+        // Multiple images - use new format
+        frontmatterLines.push('images:');
+        newImageFileNames.forEach((imageName) => {
+          frontmatterLines.push(`  - "${imageName}"`);
+        });
+      }
+
+      // Add exam info if provided
+      if (payload.isPreviousExam) {
+        frontmatterLines.push(`is_previous_exam: true`);
+        if (payload.examSchoolYear?.trim()) {
+          frontmatterLines.push(`exam_school_year: "${payload.examSchoolYear.trim()}"`);
+        }
+        if (payload.examSemester?.trim()) {
+          frontmatterLines.push(`exam_semester: "${payload.examSemester.trim()}"`);
+        }
       }
 
       frontmatterLines.push('choices:');
@@ -1250,35 +1549,15 @@ app.whenReady().then(() => {
 
       if (destPath !== resolvedPath) {
         fs.unlinkSync(resolvedPath);
-      }
-
-      if (payload.image === null) {
-        if (oldImagePath && fs.existsSync(oldImagePath)) {
-          try {
-            fs.unlinkSync(oldImagePath);
-          } catch {
-            // ignore cleanup errors
+        // Clean up old images in old directory
+        for (const oldPath of oldImagePaths) {
+          if (fs.existsSync(oldPath) && path.dirname(oldPath) !== destDir) {
+            try {
+              fs.unlinkSync(oldPath);
+            } catch {
+              // ignore cleanup errors
+            }
           }
-        }
-      } else if (payload.image && oldImagePath && fs.existsSync(oldImagePath)) {
-        if (!newImageFullPath || oldImagePath !== newImageFullPath) {
-          try {
-            fs.unlinkSync(oldImagePath);
-          } catch {
-            // ignore cleanup errors
-          }
-        }
-      } else if (
-        payload.image === undefined &&
-        copiedOldImage &&
-        oldImagePath &&
-        fs.existsSync(oldImagePath) &&
-        path.dirname(oldImagePath) !== destDir
-      ) {
-        try {
-          fs.unlinkSync(oldImagePath);
-        } catch {
-          // ignore cleanup errors
         }
       }
 
@@ -1311,24 +1590,14 @@ app.whenReady().then(() => {
       broadcastDataRefresh({ counts, progress });
       return counts;
     } catch (error) {
-      if (wroteNewImage && newImageFullPath && fs.existsSync(newImageFullPath)) {
-        try {
-          fs.unlinkSync(newImageFullPath);
-        } catch {
-          // ignore cleanup errors
-        }
-      }
-      if (
-        copiedOldImage &&
-        newImageFullPath &&
-        fs.existsSync(newImageFullPath) &&
-        oldImagePath &&
-        newImageFullPath !== oldImagePath
-      ) {
-        try {
-          fs.unlinkSync(newImageFullPath);
-        } catch {
-          // ignore cleanup errors
+      // Clean up newly written image files on error
+      for (const imgPath of newImageFilePaths) {
+        if (fs.existsSync(imgPath)) {
+          try {
+            fs.unlinkSync(imgPath);
+          } catch {
+            // ignore cleanup errors
+          }
         }
       }
       if (destPath !== resolvedPath && fs.existsSync(destPath)) {
@@ -1397,7 +1666,7 @@ app.whenReady().then(() => {
       throw new Error('Invalid payload received.');
     }
 
-    const { title, description, difficulty, section, lesson, files, testCases, image } = payload;
+    const { title, description, difficulty, section, lesson, author, files, testCases, image, images, isPreviousExam, examSchoolYear, examSemester } = payload;
 
     if (!title.trim() || !description.trim()) {
       throw new Error('Title and description are required.');
@@ -1470,24 +1739,40 @@ app.whenReady().then(() => {
     const jsonFileName = `${questionId}.json`;
     const jsonPath = path.join(lessonDir, jsonFileName);
 
-    let imageFileName: string | undefined;
-    let imageFilePath: string | undefined;
+    const imageFileNames: string[] = [];
+    const imageFilePaths: string[] = [];
 
     try {
-      if (image && image.dataUrl) {
+      // Handle multiple images (new format)
+      if (images && Array.isArray(images) && images.length > 0) {
+        images.forEach((img, index) => {
+          if (img && img.dataUrl) {
+            const { buffer, extension } = parseImageDataUrl(img.dataUrl);
+            const imageFileName = `${questionId}-${index}.${extension}`;
+            const imageFilePath = path.join(lessonDir, imageFileName);
+            fs.writeFileSync(imageFilePath, buffer);
+            imageFileNames.push(imageFileName);
+            imageFilePaths.push(imageFilePath);
+          }
+        });
+      } else if (image && image.dataUrl) {
+        // Legacy single image support
         const { buffer, extension } = parseImageDataUrl(image.dataUrl);
-        imageFileName = `${questionId}.${extension}`;
-        imageFilePath = path.join(lessonDir, imageFileName);
+        const imageFileName = `${questionId}.${extension}`;
+        const imageFilePath = path.join(lessonDir, imageFileName);
         fs.writeFileSync(imageFilePath, buffer);
+        imageFileNames.push(imageFileName);
+        imageFilePaths.push(imageFilePath);
       }
 
-      const problemData = {
+      const problemData: Record<string, unknown> = {
         id: questionId,
         title: title.trim(),
         description: description.replace(/\r\n/g, '\n').trim(),
         difficulty,
         section: sectionDef.label,
         lesson,
+        author: author?.trim() || undefined,
         files: files.map(f => ({
           filename: f.filename.trim(),
           content: f.content.replace(/\r\n/g, '\n'),
@@ -1496,10 +1781,21 @@ app.whenReady().then(() => {
           language: f.language,
         })),
         test_cases: normalizedTestCases,
-        image: imageFileName || null,
         created_at: createdAt,
         updated_at: createdAt,
+        is_previous_exam: isPreviousExam || undefined,
+        exam_school_year: isPreviousExam && examSchoolYear?.trim() ? examSchoolYear.trim() : undefined,
+        exam_semester: isPreviousExam && examSemester?.trim() ? examSemester.trim() : undefined,
       };
+
+      // Store images - use new format for multiple, legacy for single
+      if (imageFileNames.length === 1) {
+        problemData.image = imageFileNames[0];
+      } else if (imageFileNames.length > 1) {
+        problemData.images = imageFileNames;
+      } else {
+        problemData.image = null;
+      }
 
       fs.writeFileSync(jsonPath, JSON.stringify(problemData, null, 2), 'utf-8');
 
@@ -1517,13 +1813,16 @@ app.whenReady().then(() => {
         counts,
       };
     } catch (error) {
-      if (imageFilePath && fs.existsSync(imageFilePath)) {
-        try {
-          fs.unlinkSync(imageFilePath);
-        } catch {
-          // Ignore cleanup errors
+      // Cleanup images on error
+      imageFilePaths.forEach((imgPath) => {
+        if (fs.existsSync(imgPath)) {
+          try {
+            fs.unlinkSync(imgPath);
+          } catch {
+            // Ignore cleanup errors
+          }
         }
-      }
+      });
       if (fs.existsSync(jsonPath)) {
         try {
           fs.unlinkSync(jsonPath);
@@ -1566,6 +1865,7 @@ app.whenReady().then(() => {
             const title = typeof data.title === 'string' ? data.title : 'Untitled';
             const description = typeof data.description === 'string' ? data.description : '';
             const difficulty = ['Easy', 'Medium', 'Hard'].includes(data.difficulty) ? data.difficulty : 'Medium';
+            const author = typeof data.author === 'string' && data.author.trim() ? data.author.trim() : undefined;
             const createdAt = typeof data.created_at === 'string' ? data.created_at : undefined;
             const updatedAt = typeof data.updated_at === 'string' ? data.updated_at : undefined;
 
@@ -1591,7 +1891,41 @@ app.whenReady().then(() => {
               : [];
 
             let imageDataUrl: string | undefined;
-            if (typeof data.image === 'string' && data.image.trim()) {
+            let imageDataUrls: string[] | undefined;
+
+            // Check for multiple images (new format)
+            if (Array.isArray(data.images) && data.images.length > 0) {
+              imageDataUrls = [];
+              for (const img of data.images) {
+                // Handle both string format and object format
+                let imgFileName: string | undefined;
+                if (typeof img === 'string' && img.trim()) {
+                  imgFileName = img.trim();
+                } else if (img && typeof img === 'object' && typeof img.filename === 'string' && img.filename.trim()) {
+                  imgFileName = img.filename.trim();
+                }
+                if (imgFileName) {
+                  const imagePath = path.join(lessonDir, imgFileName);
+                  if (fs.existsSync(imagePath)) {
+                    try {
+                      const imageBuffer = fs.readFileSync(imagePath);
+                      const ext = path.extname(imagePath).toLowerCase();
+                      const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null;
+                      if (mimeType) {
+                        imageDataUrls.push(`data:${mimeType};base64,${imageBuffer.toString('base64')}`);
+                      }
+                    } catch {
+                      // Ignore image read errors
+                    }
+                  }
+                }
+              }
+              // Set first image as legacy imageDataUrl for backward compatibility
+              if (imageDataUrls.length > 0) {
+                imageDataUrl = imageDataUrls[0];
+              }
+            } else if (typeof data.image === 'string' && data.image.trim()) {
+              // Legacy single image support
               const imagePath = path.join(lessonDir, data.image.trim());
               if (fs.existsSync(imagePath)) {
                 try {
@@ -1600,12 +1934,18 @@ app.whenReady().then(() => {
                   const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null;
                   if (mimeType) {
                     imageDataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+                    imageDataUrls = [imageDataUrl];
                   }
                 } catch {
                   // Ignore image read errors
                 }
               }
             }
+
+            // Read exam info
+            const isPreviousExam = data.is_previous_exam === true;
+            const examSchoolYear = typeof data.exam_school_year === 'string' ? data.exam_school_year : undefined;
+            const examSemester = typeof data.exam_semester === 'string' ? data.exam_semester : undefined;
 
             records.push({
               id,
@@ -1615,12 +1955,17 @@ app.whenReady().then(() => {
               sectionKey,
               section: sectionDef.label,
               lesson: lessonName,
+              author,
               filePath,
               files,
               testCases,
               imageDataUrl,
+              imageDataUrls,
               createdAt,
               updatedAt,
+              isPreviousExam,
+              examSchoolYear,
+              examSemester,
             });
           } catch (err) {
             console.error(`Failed to parse practical question file: ${filePath}`, err);
@@ -1647,7 +1992,7 @@ app.whenReady().then(() => {
       throw new Error('Question file not found.');
     }
 
-    const { title, description, difficulty, sectionKey, lesson, files, testCases, image } = payload;
+    const { title, description, difficulty, sectionKey, lesson, author, files, testCases, image, images, isPreviousExam, examSchoolYear, examSemester } = payload;
 
     if (!title.trim() || !description.trim()) {
       throw new Error('Title and description are required.');
@@ -1708,7 +2053,33 @@ app.whenReady().then(() => {
     const rawData = fs.readFileSync(resolvedPath, 'utf-8');
     const existingData = JSON.parse(rawData);
     const oldImageName = typeof existingData.image === 'string' && existingData.image.trim() ? existingData.image.trim() : undefined;
-    const oldImagePath = oldImageName ? path.join(path.dirname(resolvedPath), oldImageName) : undefined;
+    const oldImagesArray = Array.isArray(existingData.images) ? existingData.images : [];
+    const oldImagePaths: string[] = [];
+    
+    // Collect all old image paths - handle both string array and object array formats
+    if (oldImagesArray.length > 0) {
+      for (const img of oldImagesArray) {
+        let imgFileName: string | undefined;
+        if (typeof img === 'string' && img.trim()) {
+          // String format (new standard)
+          imgFileName = img.trim();
+        } else if (img && typeof img === 'object' && typeof img.filename === 'string' && img.filename.trim()) {
+          // Object format (legacy from previous implementation)
+          imgFileName = img.filename.trim();
+        }
+        if (imgFileName) {
+          const imgPath = path.join(path.dirname(resolvedPath), imgFileName);
+          if (fs.existsSync(imgPath)) {
+            oldImagePaths.push(imgPath);
+          }
+        }
+      }
+    } else if (oldImageName) {
+      const imgPath = path.join(path.dirname(resolvedPath), oldImageName);
+      if (fs.existsSync(imgPath)) {
+        oldImagePaths.push(imgPath);
+      }
+    }
     
     // Check if section or lesson changed (need to move file)
     const oldSectionKey = Object.keys(SECTION_DEFINITIONS).find(
@@ -1717,8 +2088,8 @@ app.whenReady().then(() => {
     const oldLesson = existingData.lesson;
     const needsMove = oldSectionKey !== sectionKey || oldLesson !== lesson;
 
-    let newImageFileName: string | undefined;
-    let newImageFilePath: string | undefined;
+    const newImageFileNames: string[] = [];
+    const newImageFilePaths: string[] = [];
 
     try {
       // Determine the target directory (might be different if moving)
@@ -1730,34 +2101,79 @@ app.whenReady().then(() => {
         ensureDirExists(targetDir);
       }
       
-      if (image !== undefined) {
-        if (oldImagePath && fs.existsSync(oldImagePath)) {
-          try {
-            fs.unlinkSync(oldImagePath);
-          } catch {
-            // Ignore cleanup errors
+      const questionId = typeof existingData.id === 'string' ? existingData.id : payload.id;
+      
+      // Handle multiple images (new format)
+      if (images && Array.isArray(images)) {
+        // Delete all old images first
+        for (const oldPath of oldImagePaths) {
+          if (fs.existsSync(oldPath)) {
+            try {
+              fs.unlinkSync(oldPath);
+            } catch {
+              // Ignore cleanup errors
+            }
+          }
+        }
+        
+        // Write new images
+        images.forEach((img, index) => {
+          if (img && img.dataUrl) {
+            const { buffer, extension } = parseImageDataUrl(img.dataUrl);
+            const imageFileName = `${questionId}-${index}.${extension}`;
+            const imageFilePath = path.join(targetDir, imageFileName);
+            fs.writeFileSync(imageFilePath, buffer);
+            newImageFileNames.push(imageFileName);
+            newImageFilePaths.push(imageFilePath);
+          }
+        });
+      } else if (image !== undefined) {
+        // Delete old images
+        for (const oldPath of oldImagePaths) {
+          if (fs.existsSync(oldPath)) {
+            try {
+              fs.unlinkSync(oldPath);
+            } catch {
+              // Ignore cleanup errors
+            }
           }
         }
 
         if (image && image.dataUrl) {
           const { buffer, extension } = parseImageDataUrl(image.dataUrl);
-          const questionId = typeof existingData.id === 'string' ? existingData.id : payload.id;
-          newImageFileName = `${questionId}.${extension}`;
-          newImageFilePath = path.join(targetDir, newImageFileName);
-          fs.writeFileSync(newImageFilePath, buffer);
+          const imageFileName = `${questionId}.${extension}`;
+          const imageFilePath = path.join(targetDir, imageFileName);
+          fs.writeFileSync(imageFilePath, buffer);
+          newImageFileNames.push(imageFileName);
+          newImageFilePaths.push(imageFilePath);
         }
       } else {
-        newImageFileName = oldImageName;
+        // Keep existing images - copy to new location if moving
+        if (needsMove && oldImagePaths.length > 0) {
+          for (const oldPath of oldImagePaths) {
+            const imgName = path.basename(oldPath);
+            const destinationPath = path.join(targetDir, imgName);
+            fs.copyFileSync(oldPath, destinationPath);
+            newImageFileNames.push(imgName);
+            newImageFilePaths.push(destinationPath);
+          }
+        } else {
+          // Keep old names
+          for (const oldPath of oldImagePaths) {
+            newImageFileNames.push(path.basename(oldPath));
+          }
+        }
       }
 
       const updatedAt = new Date().toISOString();
-      const updatedData = {
+      const updatedData: any = {
         ...existingData,
         title: title.trim(),
         description: description.replace(/\r\n/g, '\n').trim(),
         difficulty,
         section: sectionDef.label,
         lesson,
+        author: author?.trim() || existingData.author || undefined,
         files: files.map(f => ({
           filename: f.filename.trim(),
           content: f.content.replace(/\r\n/g, '\n'),
@@ -1767,9 +2183,26 @@ app.whenReady().then(() => {
           language: f.language,
         })),
         test_cases: normalizedTestCases,
-        image: newImageFileName || null,
         updated_at: updatedAt,
+        is_previous_exam: isPreviousExam || undefined,
+        exam_school_year: isPreviousExam && examSchoolYear?.trim() ? examSchoolYear.trim() : undefined,
+        exam_semester: isPreviousExam && examSemester?.trim() ? examSemester.trim() : undefined,
       };
+
+      // Set image fields based on what we have
+      if (newImageFileNames.length === 1) {
+        // Single image - use legacy format
+        updatedData.image = newImageFileNames[0];
+        delete updatedData.images;
+      } else if (newImageFileNames.length > 1) {
+        // Multiple images - store as array of strings
+        updatedData.images = newImageFileNames;
+        updatedData.image = newImageFileNames[0]; // Keep first as legacy
+      } else {
+        // No images
+        updatedData.image = null;
+        delete updatedData.images;
+      }
 
       let finalPath = resolvedPath;
       
@@ -1780,17 +2213,25 @@ app.whenReady().then(() => {
         const newDir = path.join(baseDir, sectionSlug, lessonSlug);
         ensureDirExists(newDir);
         
-        const questionId = existingData.id;
-        const newPath = path.join(newDir, `${questionId}.json`);
+        const questionIdForMove = existingData.id;
+        const newPath = path.join(newDir, `${questionIdForMove}.json`);
         
         // Write to new location
         fs.writeFileSync(newPath, JSON.stringify(updatedData, null, 2), 'utf-8');
         
-        // Move old image if it exists and we didn't upload a new one
-        if (!image && oldImagePath && fs.existsSync(oldImagePath)) {
-          const newImagePath = path.join(newDir, oldImageName!);
-          fs.copyFileSync(oldImagePath, newImagePath);
-          fs.unlinkSync(oldImagePath);
+        // Images should already be handled above (either copied to target dir or kept)
+        // Clean up old images if they weren't copied
+        if (!images && image === undefined) {
+          // Images were copied above, delete originals
+          for (const oldPath of oldImagePaths) {
+            if (fs.existsSync(oldPath) && path.dirname(oldPath) !== newDir) {
+              try {
+                fs.unlinkSync(oldPath);
+              } catch {
+                // Ignore cleanup errors
+              }
+            }
+          }
         }
         
         // Delete old file
@@ -1818,11 +2259,14 @@ app.whenReady().then(() => {
       broadcastDataRefresh({ counts, progress });
       return counts;
     } catch (error) {
-      if (newImageFilePath && fs.existsSync(newImageFilePath)) {
-        try {
-          fs.unlinkSync(newImageFilePath);
-        } catch {
-          // Ignore cleanup errors
+      // Clean up newly written images on error
+      for (const imgPath of newImageFilePaths) {
+        if (fs.existsSync(imgPath)) {
+          try {
+            fs.unlinkSync(imgPath);
+          } catch {
+            // Ignore cleanup errors
+          }
         }
       }
       throw error;
@@ -2392,6 +2836,10 @@ app.whenReady().then(() => {
                   const title = typeof data.title === 'string' ? data.title : 'Untitled';
                   const description = typeof data.description === 'string' ? data.description : '';
                   const difficulty = ['Easy', 'Medium', 'Hard'].includes(data.difficulty) ? data.difficulty : 'Medium';
+                  const author = typeof data.author === 'string' && data.author.trim() ? data.author.trim() : undefined;
+                  const isPreviousExam = data.is_previous_exam === true;
+                  const examSchoolYear = typeof data.exam_school_year === 'string' ? data.exam_school_year : undefined;
+                  const examSemester = typeof data.exam_semester === 'string' ? data.exam_semester : undefined;
 
                   const parsedFiles: CodeFilePayload[] = Array.isArray(data.files)
                     ? data.files.map((f: any) => ({
@@ -2415,7 +2863,31 @@ app.whenReady().then(() => {
                     : [];
 
                   let imageDataUrl: string | null = null;
-                  if (data.image && typeof data.image === 'string') {
+                  let imageDataUrls: string[] = [];
+                  
+                  // Check for multiple images (new format)
+                  if (Array.isArray(data.images) && data.images.length > 0) {
+                    for (const imgFileName of data.images) {
+                      if (typeof imgFileName === 'string' && imgFileName.trim()) {
+                        const imagePath = path.join(lessonDir, imgFileName.trim());
+                        if (fs.existsSync(imagePath)) {
+                          const imageBuffer = fs.readFileSync(imagePath);
+                          const ext = path.extname(imagePath).toLowerCase();
+                          const mimeType =
+                            ext === '.png' ? 'image/png' :
+                            ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+                            ext === '.gif' ? 'image/gif' :
+                            'image/png';
+                          imageDataUrls.push(`data:${mimeType};base64,${imageBuffer.toString('base64')}`);
+                        }
+                      }
+                    }
+                    // Set first image as legacy imageDataUrl for backward compatibility
+                    if (imageDataUrls.length > 0) {
+                      imageDataUrl = imageDataUrls[0];
+                    }
+                  } else if (data.image && typeof data.image === 'string') {
+                    // Legacy single image support
                     const imageName = data.image;
                     const ext = path.extname(imageName).toLowerCase();
                     const imagePath = path.join(lessonDir, imageName);
@@ -2427,7 +2899,38 @@ app.whenReady().then(() => {
                         ext === '.gif' ? 'image/gif' :
                         'image/png';
                       imageDataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+                      imageDataUrls = [imageDataUrl];
                     }
+                  }
+
+                  // Check if there's saved progress for this question
+                  const userDataDir = app.getPath('userData');
+                  const progressDir = path.join(userDataDir, 'practical-progress');
+                  const savedProgressFile = path.join(progressDir, `${id}.json`);
+                  
+                  let filesWithProgress = parsedFiles;
+                  if (fs.existsSync(savedProgressFile)) {
+                    try {
+                      const savedFiles = JSON.parse(fs.readFileSync(savedProgressFile, 'utf-8'));
+                      // Merge saved content into parsedFiles
+                      filesWithProgress = parsedFiles.map((pf: CodeFilePayload) => {
+                        const savedFile = savedFiles.find((sf: { filename: string; content: string }) => sf.filename === pf.filename);
+                        if (savedFile && savedFile.content) {
+                          return { ...pf, content: savedFile.content };
+                        }
+                        return pf;
+                      });
+                    } catch (err) {
+                      console.error('Failed to load saved progress:', err);
+                    }
+                  } else {
+                    // No saved progress - blank out answer files so students don't see the author's solution
+                    filesWithProgress = parsedFiles.map((pf: CodeFilePayload) => {
+                      if (pf.isAnswerFile) {
+                        return { ...pf, content: '' }; // Frontend will show default placeholder
+                      }
+                      return pf;
+                    });
                   }
 
                   currentPracticalQuestion = {
@@ -2438,10 +2941,15 @@ app.whenReady().then(() => {
                     sectionKey,
                     section: sectionDef.label,
                     lesson: lessonName,
+                    author,
                     filePath,
-                    files: parsedFiles,
+                    files: filesWithProgress,
                     testCases,
                     imageDataUrl,
+                    imageDataUrls: imageDataUrls.length > 0 ? imageDataUrls : undefined,
+                    isPreviousExam,
+                    examSchoolYear,
+                    examSemester,
                   };
 
                   // Create new problem solver window
@@ -2560,8 +3068,58 @@ app.whenReady().then(() => {
 
       const progressFile = path.join(progressDir, `${payload.questionId}.json`);
       fs.writeFileSync(progressFile, JSON.stringify(payload.files, null, 2), 'utf-8');
+
+      // Also mark the problem as "attempted" in progress.json if not already completed
+      const progress = readProgress();
+      const practicalEntry = ensurePracticalProgressEntry(progress, payload.questionId);
+      if (!practicalEntry.completed && practicalEntry.attempts === 0) {
+        practicalEntry.attempts = 1;
+        practicalEntry.lastAttemptAt = new Date().toISOString();
+        writeProgress(progress);
+        
+        // Broadcast the updated progress
+        const counts = calculateQuestionCounts(progress);
+        BrowserWindow.getAllWindows().forEach((win) => {
+          win.webContents.send('data:refresh', { counts, progress });
+        });
+      }
     } catch (error) {
       console.error('Failed to save practical progress:', error);
+      throw error;
+    }
+  });
+
+  ipcMain.handle('reset-practical-progress', async (_event, payload: { questionId: string }) => {
+    try {
+      // Delete the student's progress file
+      const userDataDir = app.getPath('userData');
+      const progressDir = path.join(userDataDir, 'practical-progress');
+      const progressFile = path.join(progressDir, `${payload.questionId}.json`);
+      
+      if (fs.existsSync(progressFile)) {
+        fs.unlinkSync(progressFile);
+      }
+
+      // Reset the practical progress in the main progress data
+      const progressPath = getProgressPath();
+      if (fs.existsSync(progressPath)) {
+        const progressData: ProgressData = JSON.parse(fs.readFileSync(progressPath, 'utf-8'));
+        if (progressData.practical && progressData.practical[payload.questionId]) {
+          delete progressData.practical[payload.questionId];
+          fs.writeFileSync(progressPath, JSON.stringify(progressData, null, 2), 'utf-8');
+        }
+      }
+
+      // Broadcast updated progress to all windows
+      const newProgress = readProgress();
+      const counts = calculateQuestionCounts(newProgress);
+      BrowserWindow.getAllWindows().forEach((win) => {
+        win.webContents.send('data:refresh', { counts, progress: newProgress });
+      });
+
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to reset practical progress:', error);
       throw error;
     }
   });
