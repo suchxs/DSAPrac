@@ -1,0 +1,50 @@
+{
+  "id": "practical-1764266770879-ac133b59",
+  "title": "qwe",
+  "description": "勉強する気力がない",
+  "difficulty": "Easy",
+  "section": "Section 3",
+  "lesson": "ADT Priority Queue",
+  "author": "suchxs",
+  "files": [
+    {
+      "filename": "main.c",
+      "content": "#include <stdio.h>\n\n\n\n\nint main(){\n\n    printf(\"Hello World!\\n\");\n\n\n\n    return 0;\n}",
+      "is_locked": false,
+      "is_answer_file": true,
+      "language": "c"
+    }
+  ],
+  "test_cases": [
+    {
+      "input": "",
+      "expected_output": "Hello World!",
+      "is_hidden": false,
+      "execution_time": 23,
+      "memory_usage": 0
+    },
+    {
+      "input": "",
+      "expected_output": "Hello World!",
+      "is_hidden": false,
+      "execution_time": 23,
+      "memory_usage": 0
+    },
+    {
+      "input": "",
+      "expected_output": "Hello World!",
+      "is_hidden": true,
+      "execution_time": 18,
+      "memory_usage": 0
+    }
+  ],
+  "created_at": "2025-11-27T18:06:10.878Z",
+  "updated_at": "2025-11-27T18:06:10.878Z",
+  "is_previous_exam": true,
+  "exam_school_year": "2017",
+  "exam_semester": "Summer",
+  "images": [
+    "practical-1764266770879-ac133b59-0.jpg",
+    "practical-1764266770879-ac133b59-1.jpg"
+  ]
+}
