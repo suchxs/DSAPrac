@@ -41,6 +41,7 @@ export interface ElectronAPI {
   submitPracticalSolution: (payload: SubmitPracticalSolutionPayload) => Promise<SubmitPracticalSolutionResult>;
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
   runDevConsoleCommand: (command: string) => Promise<{ ok: boolean; output: string[]; action?: string }>;
+  onDevConsoleLog: (callback: (entry: { level: string; message: string; source?: string; line?: number }) => void) => () => void;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;

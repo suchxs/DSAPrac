@@ -129,6 +129,22 @@ const DeveloperConsole: React.FC<DeveloperConsoleProps> = ({ enabled, hotkey }) 
     });
   };
 
+  // Listen for console events forwarded from all BrowserWindows via IPC
+  useEffect(() => {
+    const unsubscribe = window.api.onDevConsoleLog?.((entry) => {
+      const level: EntryLevel =
+        entry.level === 'warn' || entry.level === 'error' || entry.level === 'system'
+          ? entry.level
+          : 'log';
+      const sourcePrefix = entry.source ? `[${entry.source}] ` : '';
+      pushEntry(level, `${sourcePrefix}${entry.message}`);
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
   const closeConsole = () => setVisible(false);
 
   const handleSubmit = async () => {

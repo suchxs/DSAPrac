@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 interface TheoreticalQuestionRecord {
@@ -34,6 +34,16 @@ const TheoryQuiz: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { selectedTags } = (location.state as LocationState) || { selectedTags: [] };
+  const formatElapsed = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60)
+      .toString()
+      .padStart(2, '0');
+    const seconds = Math.floor(totalSeconds % 60)
+      .toString()
+      .padStart(2, '0');
+    return `${minutes}:${seconds}`;
+  };
 
   const [questions, setQuestions] = useState<TheoreticalQuestionRecord[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -42,9 +52,19 @@ const TheoryQuiz: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadQuestions();
+    timerRef.current = setInterval(() => {
+      setElapsedMs((prev) => prev + 1000);
+    }, 1000);
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
   }, []);
 
   const loadQuestions = async () => {
@@ -153,9 +173,15 @@ const TheoryQuiz: React.FC = () => {
     setAnswers(newAnswers);
     setShowResults(true);
     setShowSubmitModal(false);
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
   };
 
   const handleBack = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
     navigate('/practice');
   };
 
@@ -346,12 +372,18 @@ const TheoryQuiz: React.FC = () => {
               Question {currentQuestionIndex + 1} of {questions.length}
             </p>
           </div>
-          <button
-            onClick={() => setShowExitModal(true)}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer"
-          >
-            Exit Quiz
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-neutral-300 font-mono px-3 py-1 rounded bg-neutral-900 border border-neutral-800">
+              Time: {Math.floor(elapsedMs / 60000).toString().padStart(2, '0')}:
+              {Math.floor((elapsedMs / 1000) % 60).toString().padStart(2, '0')}
+            </div>
+            <button
+              onClick={() => setShowExitModal(true)}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors cursor-pointer"
+            >
+              Exit Quiz
+            </button>
+          </div>
         </div>
 
         {/* Progress Bar */}

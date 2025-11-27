@@ -1,9 +1,13 @@
 use crate::types::*;
 use anyhow::{Context, Result};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command as TokioCommand;
-use tokio::io::{AsyncWriteExt, AsyncReadExt};
+use tokio::time::sleep;
+use sysinfo::{Pid, ProcessRefreshKind, RefreshKind, System};
 
 /// Handles execution of compiled code with sandboxing
 pub struct Executor {
@@ -37,6 +41,33 @@ impl Executor {
                 .context("Failed to write to stdin")?;
         }
 
+        let pid = child.id();
+        let peak_mem = Arc::new(AtomicU64::new(0));
+        let running = Arc::new(AtomicBool::new(true));
+
+        // Sampling task to capture peak memory while the process is running
+        let peak_mem_clone = Arc::clone(&peak_mem);
+        let running_clone = Arc::clone(&running);
+        let sampler = tokio::spawn(async move {
+          if let Some(pid_val) = pid {
+            let mut sys = System::new_with_specifics(
+              RefreshKind::new().with_processes(ProcessRefreshKind::new())
+            );
+            let target_pid = Pid::from_u32(pid_val as u32);
+            while running_clone.load(Ordering::Relaxed) {
+              sys.refresh_process_specifics(target_pid, ProcessRefreshKind::new());
+              if let Some(proc) = sys.process(target_pid) {
+                let mem = proc.memory(); // in KB
+                let current = peak_mem_clone.load(Ordering::Relaxed);
+                if mem > current {
+                  peak_mem_clone.store(mem, Ordering::Relaxed);
+                }
+              }
+              sleep(Duration::from_millis(30)).await;
+            }
+          }
+        });
+
         // Concurrently read stdout/stderr while waiting
         let mut stdout_opt = child.stdout.take();
         let mut stderr_opt = child.stderr.take();
@@ -68,12 +99,16 @@ impl Executor {
                 let error = if !status.success() && !stderr_buf.is_empty() {
                     Some(String::from_utf8_lossy(&stderr_buf).to_string())
                 } else { None };
+                running.store(false, Ordering::Relaxed);
+                let _ = sampler.await;
+                let memory_usage = peak_mem.load(Ordering::Relaxed);
+
                 Ok(ExecutionResult {
                     success: status.success(),
                     output: output_str,
                     error,
                     execution_time,
-                    memory_usage: 0,
+                    memory_usage,
                 })
             }
             Ok(Err(e)) => Ok(ExecutionResult {
@@ -89,12 +124,16 @@ impl Executor {
                 let _ = child.wait().await;
                 let _ = stdout_task.await;
                 let _ = stderr_task.await;
+                running.store(false, Ordering::Relaxed);
+                let _ = sampler.await;
+                let memory_usage = peak_mem.load(Ordering::Relaxed);
+
                 Ok(ExecutionResult {
                     success: false,
                     output: String::new(),
                     error: Some("Time limit exceeded".to_string()),
                     execution_time,
-                    memory_usage: 0,
+                    memory_usage,
                 })
             }
         }

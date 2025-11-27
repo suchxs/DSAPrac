@@ -66,6 +66,9 @@ const sections: Section[] = [
   },
 ];
 
+const TIMER_STORAGE_PREFIX = 'practical-timer-';
+const RESULTS_STORAGE_PREFIX = 'practical-results-';
+
 const PracticeMode: React.FC = () => {
   const navigate = useNavigate();
   const [selectedTags, setSelectedTags] = useState<Set<string>>(new Set());
@@ -163,6 +166,9 @@ const PracticeMode: React.FC = () => {
     if (!selectedPractical) return;
     setIsResetting(true);
     try {
+      // Clear persisted timer for this problem
+      localStorage.removeItem(`${TIMER_STORAGE_PREFIX}${selectedPractical}`);
+      localStorage.removeItem(`${RESULTS_STORAGE_PREFIX}${selectedPractical}`);
       await window.api.resetPracticalProgress({ questionId: selectedPractical });
       setShowResetModal(false);
       setSelectedPractical(null);
@@ -188,16 +194,16 @@ const PracticeMode: React.FC = () => {
     return acc;
   }, {} as Record<string, Record<string, PracticalQuestionRecord[]>>);
 
-  const getDifficultyColor = (difficulty: 'Easy' | 'Medium' | 'Hard') => {
+  const getDifficultyStyles = (difficulty: 'Easy' | 'Medium' | 'Hard') => {
     switch (difficulty) {
       case 'Easy':
-        return 'text-green-400';
+        return { text: 'text-green-300', border: 'border-green-400/60 bg-green-500/10' };
       case 'Medium':
-        return 'text-yellow-400';
+        return { text: 'text-yellow-300', border: 'border-yellow-400/60 bg-yellow-500/10' };
       case 'Hard':
-        return 'text-red-400';
+        return { text: 'text-red-300', border: 'border-red-400/60 bg-red-500/10' };
       default:
-        return 'text-gray-400';
+        return { text: 'text-gray-300', border: 'border-white/40 bg-white/10' };
     }
   };
 
@@ -379,6 +385,7 @@ const PracticeMode: React.FC = () => {
                             const totalTests =
                               progressEntry?.totalTests ?? (question.testCases?.length ?? 0);
                             const attempts = progressEntry?.attempts ?? 0;
+                            const difficultyStyles = getDifficultyStyles(question.difficulty);
 
                             let statusLabel = 'Not started';
                             let statusClass =
@@ -401,52 +408,53 @@ const PracticeMode: React.FC = () => {
                               <button
                                 key={question.id}
                                 onClick={() => handleSelectPractical(question.id)}
-                                className={`w-full text-left p-2 rounded-lg transition-all cursor-pointer ${
+                                className={`w-full text-left p-3 rounded-lg transition-all cursor-pointer ${
                                   isSelected
                                     ? 'bg-blue-500/20 border border-blue-400/50'
                                     : 'bg-white/5 hover:bg-white/10 border border-transparent'
                                 }`}
                               >
-                                <div className="flex items-start justify-between gap-2">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
-                                      <span className="text-sm font-medium truncate">
-                                        {question.title}
-                                      </span>
-                                      {isCompleted && (
-                                        <svg
-                                          className="w-4 h-4 text-green-400 shrink-0"
-                                          fill="currentColor"
-                                          viewBox="0 0 20 20"
-                                        >
-                                          <path
-                                            fillRule="evenodd"
-                                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                                              clipRule="evenodd"
-                                            />
-                                          </svg>
-                                        )}
-                                    </div>
-                                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                                      <span
-                                        className={`text-[10px] font-medium px-2 py-0.5 rounded-full uppercase tracking-wide border ${statusClass}`}
+                                <div className="flex flex-col gap-1.5">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="text-sm font-medium truncate">
+                                      {question.title}
+                                    </span>
+                                    <span
+                                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${difficultyStyles.text} ${difficultyStyles.border}`}
+                                    >
+                                      {question.difficulty}
+                                    </span>
+                                    {isCompleted && (
+                                      <svg
+                                        className="w-4 h-4 text-green-400 shrink-0"
+                                        fill="currentColor"
+                                        viewBox="0 0 20 20"
                                       >
-                                        {statusLabel}
-                                      </span>
-                                      {!isCompleted && attempts > 0 && totalTests > 0 && (
-                                        <span className="text-[10px] text-neutral-500 uppercase tracking-wide">
-                                          {attempts} attempt{attempts === 1 ? '' : 's'}
-                                        </span>
-                                      )}
-                                    </div>
+                                        <path
+                                          fillRule="evenodd"
+                                          d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                                          clipRule="evenodd"
+                                        />
+                                      </svg>
+                                    )}
                                   </div>
-                                  <span
-                                    className={`text-xs font-semibold shrink-0 ${getDifficultyColor(
-                                      question.difficulty
-                                    )}`}
-                                  >
-                                    {question.difficulty}
-                                  </span>
+                                  <div className="flex flex-wrap items-center gap-3 text-[11px] mt-2">
+                                    <span
+                                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide border ${statusClass}`}
+                                    >
+                                      {statusLabel}
+                                    </span>
+                                    {totalTests > 0 && (
+                                      <span className="text-[11px] text-neutral-300">
+                                        {bestScore}/{totalTests} test case{totalTests === 1 ? '' : 's'}
+                                      </span>
+                                    )}
+                                    {!isCompleted && attempts > 0 && (
+                                      <span className="text-[10px] text-neutral-500 uppercase tracking-wide">
+                                        {attempts} attempt{attempts === 1 ? '' : 's'}
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </button>
                             );
@@ -460,20 +468,43 @@ const PracticeMode: React.FC = () => {
             </div>
 
             {selectedPractical && (
-              <div className="mt-3 flex items-center justify-end gap-2">
-                <button
-                  onClick={() => setShowResetModal(true)}
-                  className="px-4 py-1.5 text-sm rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 transition cursor-pointer"
-                >
-                  Reset Problem
-                </button>
-                <button
-                  onClick={handleStartPractical}
-                  className="button-modern px-4 py-1.5 text-sm rounded-xl cursor-pointer"
-                >
-                  Start Problem
-                </button>
-              </div>
+              (() => {
+                const selectedQuestion = practicalQuestions.find((q) => q.id === selectedPractical);
+                const progressEntry = selectedPractical ? progress?.practical[selectedPractical] : undefined;
+                const totalTests =
+                  progressEntry?.totalTests ?? selectedQuestion?.testCases?.length ?? 0;
+                const solvedTests = progressEntry?.bestScore ?? 0;
+                const attempts = progressEntry?.attempts ?? 0;
+                const isCompleted = progressEntry?.completed ?? false;
+
+                const startLabel = isCompleted
+                  ? 'Review Problem'
+                  : attempts > 0
+                  ? 'Continue Problem'
+                  : 'Start Problem';
+
+                return (
+                  <div className="mt-3 flex items-center justify-end gap-3 flex-wrap">
+                    <div className="text-xs text-neutral-400 mr-auto">
+                      {totalTests > 0
+                        ? `Solved ${solvedTests}/${totalTests} test cases`
+                        : 'No test cases recorded yet'}
+                    </div>
+                    <button
+                      onClick={() => setShowResetModal(true)}
+                      className="px-4 py-1.5 text-sm rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 transition cursor-pointer"
+                    >
+                      Reset Problem
+                    </button>
+                    <button
+                      onClick={handleStartPractical}
+                      className="button-modern px-4 py-1.5 text-sm rounded-xl cursor-pointer"
+                    >
+                      {startLabel}
+                    </button>
+                  </div>
+                );
+              })()
             )}
           </GlassCard>
         </div>
