@@ -741,8 +741,8 @@ const PracticalQuestionCreator: React.FC = () => {
       return;
     }
 
-    if (!['image/png', 'image/jpeg'].includes(file.type)) {
-      setImageError('Unsupported file type. Please choose a PNG or JPG image.');
+    if (!['image/png', 'image/jpeg', 'image/gif'].includes(file.type)) {
+      setImageError('Unsupported file type. Please choose a PNG, JPG, or GIF image.');
       return;
     }
 
@@ -1380,7 +1380,7 @@ const PracticalQuestionCreator: React.FC = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/png,image/jpeg"
+                accept="image/png,image/jpeg,image/gif"
                 className="hidden"
                 onChange={handleImageChange}
               />

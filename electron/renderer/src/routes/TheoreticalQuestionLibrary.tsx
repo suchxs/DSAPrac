@@ -469,12 +469,12 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       return;
     }
 
-    if (!["image/png", "image/jpeg"].includes(file.type)) {
+    if (!["image/png", "image/jpeg", "image/gif"].includes(file.type)) {
       setEditState((prev) =>
         prev
           ? {
               ...prev,
-              imageError: "Unsupported file type. Please choose a PNG or JPG image.",
+              imageError: "Unsupported file type. Please choose a PNG, JPG, or GIF image.",
             }
           : prev
       );
@@ -1212,13 +1212,13 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                     Add Image ({editState.images.length}/{MAX_EDIT_IMAGES})
                   </button>
                   <span className="text-xs text-neutral-500">
-                    Optional PNG or JPG images (up to {MAX_EDIT_IMAGES}).
+                    Optional PNG, JPG, or GIF images (up to {MAX_EDIT_IMAGES}).
                   </span>
                 </div>
                 <input
                   ref={editFileInputRef}
                   type="file"
-                  accept="image/png,image/jpeg"
+                  accept="image/png,image/jpeg,image/gif"
                   className="hidden"
                   onChange={handleEditImageChange}
                 />

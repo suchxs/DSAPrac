@@ -588,7 +588,7 @@ function wireConsoleForwarding(win: BrowserWindow, label: string) {
 
 function parseImageDataUrl(dataUrl: string): { buffer: Buffer; extension: string } {
   // More permissive regex that handles edge cases with long base64 strings
-  const match = /^data:(image\/(png|jpeg));base64,(.+)$/s.exec(dataUrl);
+  const match = /^data:(image\/(png|jpeg|gif));base64,(.+)$/s.exec(dataUrl);
   if (!match) {
     throw new Error('INVALID_IMAGE_DATA');
   }
@@ -1633,8 +1633,12 @@ app.whenReady().then(() => {
                   if (fs.existsSync(imagePath)) {
                     const ext = path.extname(imgFileName).toLowerCase();
                     const mime =
-                      ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg'
+                      ext === '.png'
+                        ? 'image/png'
+                        : ext === '.jpg' || ext === '.jpeg'
                         ? 'image/jpeg'
+                        : ext === '.gif'
+                        ? 'image/gif'
                         : null;
                     if (mime) {
                       const base64 = fs.readFileSync(imagePath, { encoding: 'base64' });
@@ -1654,8 +1658,12 @@ app.whenReady().then(() => {
               if (fs.existsSync(imagePath)) {
                 const ext = path.extname(imageFileName).toLowerCase();
                 const mime =
-                  ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg'
+                  ext === '.png'
+                    ? 'image/png'
+                    : ext === '.jpg' || ext === '.jpeg'
                     ? 'image/jpeg'
+                    : ext === '.gif'
+                    ? 'image/gif'
                     : null;
                 if (mime) {
                   const base64 = fs.readFileSync(imagePath, { encoding: 'base64' });
@@ -2353,7 +2361,13 @@ app.whenReady().then(() => {
                     try {
                       const imageBuffer = fs.readFileSync(imagePath);
                       const ext = path.extname(imagePath).toLowerCase();
-                      const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null;
+                      const mimeType = ext === '.png'
+                        ? 'image/png'
+                        : ext === '.jpg' || ext === '.jpeg'
+                        ? 'image/jpeg'
+                        : ext === '.gif'
+                        ? 'image/gif'
+                        : null;
                       if (mimeType) {
                         imageDataUrls.push(`data:${mimeType};base64,${imageBuffer.toString('base64')}`);
                       }
@@ -2374,7 +2388,13 @@ app.whenReady().then(() => {
                 try {
                   const imageBuffer = fs.readFileSync(imagePath);
                   const ext = path.extname(imagePath).toLowerCase();
-                  const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null;
+                  const mimeType = ext === '.png'
+                    ? 'image/png'
+                    : ext === '.jpg' || ext === '.jpeg'
+                    ? 'image/jpeg'
+                    : ext === '.gif'
+                    ? 'image/gif'
+                    : null;
                   if (mimeType) {
                     imageDataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
                     imageDataUrls = [imageDataUrl];
