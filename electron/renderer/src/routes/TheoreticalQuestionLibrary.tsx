@@ -26,6 +26,12 @@ interface EditableChoice {
   isCorrect: boolean;
 }
 
+interface EditableMultiItem {
+  id: string;
+  subtitle: string;
+  answers: string[];
+}
+
 interface EditImageItem {
   id: string;
   name: string;
@@ -38,8 +44,9 @@ interface EditModalState {
   lesson: string;
   question: string;
   author: string;
-  questionType: "mcq" | "identification";
+  questionType: "mcq" | "identification" | "multi-identification";
   identificationAnswers: string[];
+  multiIdentificationItems: EditableMultiItem[];
   isPreviousExam: boolean;
   examSchoolYear: string;
   examSemester: string;
@@ -114,6 +121,12 @@ const createEditableChoice = (text: string, isCorrect: boolean, seed: number): E
 const createBlankChoice = (): EditableChoice =>
   createEditableChoice("", false, Date.now());
 
+const createEditableMultiItem = (): EditableMultiItem => ({
+  id: `multi-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+  subtitle: "",
+  answers: [""],
+});
+
 const TheoreticalQuestionLibrary: React.FC = () => {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState<TheoreticalQuestionRecord[]>([]);
@@ -158,7 +171,12 @@ const TheoreticalQuestionLibrary: React.FC = () => {
   };
 
   const handleOpenEdit = (record: TheoreticalQuestionRecord) => {
-    const questionType = record.questionType === "identification" ? "identification" : "mcq";
+    const questionType =
+      record.questionType === "identification"
+        ? "identification"
+        : record.questionType === "multi-identification"
+        ? "multi-identification"
+        : "mcq";
     const editableChoices =
       record.choices.length > 0
         ? record.choices.map((choice, index) =>
@@ -171,6 +189,17 @@ const TheoreticalQuestionLibrary: React.FC = () => {
           ? record.identificationAnswers
           : [""]
         : [];
+    const multiIdentificationItems =
+      questionType === "multi-identification"
+        ? (record.multiIdentificationItems || []).map((item, idx) => ({
+            id: `multi-${idx}-${Date.now()}`,
+            subtitle: item.subtitle ?? "",
+            answers:
+              item.answers && item.answers.length > 0
+                ? item.answers
+                : [""],
+          }))
+        : [createEditableMultiItem()];
 
     // Convert imageDataUrls array to EditImageItem array
     const existingImages: EditImageItem[] = (record.imageDataUrls ?? []).map((url, index) => ({
@@ -187,6 +216,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       author: record.author ?? "",
       questionType,
       identificationAnswers,
+      multiIdentificationItems,
       isPreviousExam: record.isPreviousExam ?? false,
       examSchoolYear: record.examSchoolYear ?? "",
       examSemester: record.examSemester ?? "",
@@ -222,7 +252,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
     });
   };
 
-  const handleEditQuestionTypeChange = (type: "mcq" | "identification") => {
+  const handleEditQuestionTypeChange = (type: "mcq" | "identification" | "multi-identification") => {
     setEditState((prev) => {
       if (!prev || prev.questionType === type) return prev;
 
@@ -235,13 +265,23 @@ const TheoreticalQuestionLibrary: React.FC = () => {
           choices: nextChoices,
           // Keep identification answers so they can be restored if the user switches back before saving
           identificationAnswers: prev.identificationAnswers.length > 0 ? prev.identificationAnswers : [""],
+          multiIdentificationItems: prev.multiIdentificationItems.length > 0 ? prev.multiIdentificationItems : [createEditableMultiItem()],
+        };
+      }
+
+      if (type === "identification") {
+        return {
+          ...prev,
+          questionType: "identification",
+          identificationAnswers: prev.identificationAnswers.length > 0 ? prev.identificationAnswers : [""],
         };
       }
 
       return {
         ...prev,
-        questionType: "identification",
-        identificationAnswers: prev.identificationAnswers.length > 0 ? prev.identificationAnswers : [""],
+        questionType: "multi-identification",
+        multiIdentificationItems:
+          prev.multiIdentificationItems.length > 0 ? prev.multiIdentificationItems : [createEditableMultiItem()],
       };
     });
   };
@@ -326,13 +366,19 @@ const TheoreticalQuestionLibrary: React.FC = () => {
   const editCorrectCount = editState
     ? editState.questionType === "mcq"
       ? editState.choices.reduce((count, choice) => (choice.isCorrect ? count + 1 : count), 0)
-      : editState.identificationAnswers.filter((a) => a.trim().length > 0).length
+      : editState.questionType === "identification"
+      ? editState.identificationAnswers.filter((a) => a.trim().length > 0).length
+      : editState.multiIdentificationItems.filter((item) => item.answers.some((a) => a.trim().length > 0)).length
     : 0;
 
   const editChoicesMetRequirement = editState
     ? editState.questionType === "mcq"
       ? editState.choices.length >= MIN_CHOICES
-      : editState.identificationAnswers.some((a) => a.trim().length > 0)
+      : editState.questionType === "identification"
+      ? editState.identificationAnswers.some((a) => a.trim().length > 0)
+      : editState.multiIdentificationItems.some((item) =>
+          item.answers.some((a) => a.trim().length > 0)
+        )
     : false;
 
   const isEditValid =
@@ -345,7 +391,61 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       ? editState.choices.length >= MIN_CHOICES &&
         editState.choices.every((choice) => choice.text.trim().length > 0) &&
         editCorrectCount > 0
-      : editState.identificationAnswers.some((a) => a.trim().length > 0));
+      : editState.questionType === "identification"
+      ? editState.identificationAnswers.some((a) => a.trim().length > 0)
+      : editState.multiIdentificationItems.length > 0 &&
+        editState.multiIdentificationItems.every((item) =>
+          item.answers.some((a) => a.trim().length > 0)
+        ));
+
+  const hasEdits = React.useMemo(() => {
+    if (!editState) return false;
+    const r = editState.record;
+    const baseDiff =
+      editState.sectionKey !== r.sectionKey ||
+      editState.lesson !== r.lesson ||
+      editState.question.trim() !== (r.question || '').trim() ||
+      (editState.author || '').trim() !== (r.author || '').trim() ||
+      (editState.questionType || 'mcq') !== (r.questionType || 'mcq') ||
+      editState.isPreviousExam !== (r.isPreviousExam ?? false) ||
+      (editState.examSchoolYear || '') !== (r.examSchoolYear || '') ||
+      (editState.examSemester || '') !== (r.examSemester || '') ||
+      editState.imageDirty;
+
+    if (baseDiff) return true;
+
+    if (editState.questionType === 'mcq') {
+      if (editState.choices.length !== (r.choices || []).length) return true;
+      return editState.choices.some((c, idx) => {
+        const rc = r.choices[idx];
+        return !rc || c.text.trim() !== (rc.text || '').trim() || !!c.isCorrect !== !!rc.isCorrect;
+      });
+    }
+
+    if (editState.questionType === 'identification') {
+      const src = editState.identificationAnswers.map((a) => a.trim()).filter(Boolean);
+      const dst = (r.identificationAnswers || []).map((a) => a.trim()).filter(Boolean);
+      if (src.length !== dst.length) return true;
+      return src.some((a, idx) => a !== dst[idx]);
+    }
+
+    const srcItems = editState.multiIdentificationItems.map((item) => ({
+      subtitle: item.subtitle.trim(),
+      answers: item.answers.map((a) => a.trim()).filter(Boolean),
+    }));
+    const dstItems = (r.multiIdentificationItems || []).map((item) => ({
+      subtitle: (item.subtitle || '').trim(),
+      answers: (item.answers || []).map((a) => a.trim()).filter(Boolean),
+    }));
+    if (srcItems.length !== dstItems.length) return true;
+    return srcItems.some((item, idx) => {
+      const d = dstItems[idx];
+      if (!d) return true;
+      if (item.subtitle !== (d.subtitle || '')) return true;
+      if (item.answers.length !== d.answers.length) return true;
+      return item.answers.some((a, i) => a !== d.answers[i]);
+    });
+  }, [editState]);
 
   const handleEditImageButton = () => {
     editFileInputRef.current?.click();
@@ -369,12 +469,12 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       return;
     }
 
-    if (!["image/png", "image/jpeg"].includes(file.type)) {
+    if (!["image/png", "image/jpeg", "image/gif"].includes(file.type)) {
       setEditState((prev) =>
         prev
           ? {
               ...prev,
-              imageError: "Unsupported file type. Please choose a PNG or JPG image.",
+              imageError: "Unsupported file type. Please choose a PNG, JPG, or GIF image.",
             }
           : prev
       );
@@ -444,6 +544,82 @@ const TheoreticalQuestionLibrary: React.FC = () => {
     });
   };
 
+  const handleAddMultiItemEdit = () => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      return { ...prev, multiIdentificationItems: [...prev.multiIdentificationItems, createEditableMultiItem()] };
+    });
+  };
+
+  const handleRemoveMultiItemEdit = (id: string) => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      if (prev.multiIdentificationItems.length <= 1) return prev;
+      return { ...prev, multiIdentificationItems: prev.multiIdentificationItems.filter((item) => item.id !== id) };
+    });
+  };
+
+  const handleMultiSubtitleChangeEdit = (id: string, value: string) => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        multiIdentificationItems: prev.multiIdentificationItems.map((item) =>
+          item.id === id ? { ...item, subtitle: value } : item
+        ),
+      };
+    });
+  };
+
+  const handleAddMultiAnswerEdit = (id: string) => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        multiIdentificationItems: prev.multiIdentificationItems.map((item) =>
+          item.id === id ? { ...item, answers: [...item.answers, ""] } : item
+        ),
+      };
+    });
+  };
+
+  const handleMultiAnswerChangeEdit = (id: string, idx: number, value: string) => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        multiIdentificationItems: prev.multiIdentificationItems.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                answers: item.answers.map((ans, aIdx) => (aIdx === idx ? value : ans)),
+              }
+            : item
+        ),
+      };
+    });
+  };
+
+  const handleRemoveMultiAnswerEdit = (id: string, idx: number) => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        multiIdentificationItems: prev.multiIdentificationItems.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                answers:
+                  item.answers.filter((_, aIdx) => aIdx !== idx).length > 0
+                    ? item.answers.filter((_, aIdx) => aIdx !== idx)
+                    : [""],
+              }
+            : item
+        ),
+      };
+    });
+  };
+
   const handleRemoveEditImage = (imageId: string) => {
     setEditState((prev) =>
       prev
@@ -498,6 +674,15 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       identificationAnswers:
         editState.questionType === "identification"
           ? editState.identificationAnswers.filter((a) => a.trim().length > 0)
+          : undefined,
+      multiIdentificationItems:
+        editState.questionType === "multi-identification"
+          ? editState.multiIdentificationItems
+              .map((item) => ({
+                subtitle: item.subtitle.trim(),
+                answers: item.answers.map((a) => a.trim()).filter((a) => a.length > 0),
+              }))
+              .filter((item) => item.answers.length > 0)
           : undefined,
       isPreviousExam: editState.isPreviousExam,
       examSchoolYear: editState.isPreviousExam ? editState.examSchoolYear : undefined,
@@ -660,7 +845,11 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                     {question.id}
                   </span>
                   <span className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border border-blue-500/40 text-blue-200">
-                    {question.questionType === 'identification' ? 'Identification' : 'Multiple Choice'}
+                    {question.questionType === 'identification'
+                      ? 'Identification'
+                      : question.questionType === 'multi-identification'
+                      ? 'Multiple Identification'
+                      : 'Multiple Choice'}
                   </span>
                 </div>
                 {question.createdAt && (
@@ -715,6 +904,24 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                                   No identification answers provided.
                                 </div>
                               )}
+                            </div>
+                          ) : question.questionType === "multi-identification" ? (
+                            <div className="flex flex-col gap-2">
+                              {(question.multiIdentificationItems ?? []).map((item, idx) => (
+                                <div key={`${question.id}-multi-${idx}`} className="rounded-md border border-emerald-500/60 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 space-y-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-semibold">Item {idx + 1}</span>
+                                    {item.subtitle && <span className="text-emerald-100/80 text-xs">{item.subtitle}</span>}
+                                  </div>
+                                  <div className="flex flex-wrap gap-2 text-emerald-100">
+                                    {(item.answers || []).map((ans, aIdx) => (
+                                      <span key={`${idx}-ans-${aIdx}`} className="rounded bg-emerald-500/20 px-2 py-0.5 text-xs border border-emerald-400/40">
+                                        {ans}
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           ) : (
                             <div className="flex flex-col gap-2">
@@ -859,6 +1066,22 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                     Identification
                   </label>
                 </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="edit-type-multi-identification"
+                    name="edit-question-type"
+                    checked={editState.questionType === "multi-identification"}
+                    onChange={() => handleEditQuestionTypeChange("multi-identification")}
+                    className="h-4 w-4 cursor-pointer border-neutral-700 bg-neutral-900 text-neutral-200 focus:ring-neutral-400"
+                  />
+                  <label
+                    htmlFor="edit-type-multi-identification"
+                    className="text-sm font-medium text-neutral-200 cursor-pointer"
+                  >
+                    Multiple Identification
+                  </label>
+                </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -989,13 +1212,13 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                     Add Image ({editState.images.length}/{MAX_EDIT_IMAGES})
                   </button>
                   <span className="text-xs text-neutral-500">
-                    Optional PNG or JPG images (up to {MAX_EDIT_IMAGES}).
+                    Optional PNG, JPG, or GIF images (up to {MAX_EDIT_IMAGES}).
                   </span>
                 </div>
                 <input
                   ref={editFileInputRef}
                   type="file"
-                  accept="image/png,image/jpeg"
+                  accept="image/png,image/jpeg,image/gif"
                   className="hidden"
                   onChange={handleEditImageChange}
                 />
@@ -1177,9 +1400,9 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                     ))}
                   </div>
                 </div>
-              ) : (
+              ) : editState.questionType === "identification" ? (
                 <div className="flex flex-col gap-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-2 border-b border-neutral-800">
                     <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
                       Identification Answers
                     </h3>
@@ -1188,7 +1411,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                       <button
                         type="button"
                         onClick={handleAddIdentificationAnswerEdit}
-                        className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+                        className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-900 cursor-pointer"
                       >
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -1243,13 +1466,138 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                     ))}
                   </div>
                 </div>
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
+                      Items & Answers
+                    </h3>
+                    <div className="flex items-center gap-3 text-xs text-neutral-500">
+                      <span>{editState.multiIdentificationItems.length} item{editState.multiIdentificationItems.length === 1 ? "" : "s"}</span>
+                      <button
+                        type="button"
+                        onClick={handleAddMultiItemEdit}
+                        className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-3.5 w-3.5"
+                        >
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        Add Item
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    {editState.multiIdentificationItems.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        className="rounded-lg border border-neutral-800 bg-neutral-950 p-4 space-y-3"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="text-xs uppercase tracking-wide text-neutral-500">
+                            Item {idx + 1}
+                          </div>
+                          <input
+                            value={item.subtitle}
+                            onChange={(event) => handleMultiSubtitleChangeEdit(item.id, event.target.value)}
+                            placeholder="Optional subtitle / prompt"
+                            className="flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                          />
+                          {editState.multiIdentificationItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMultiItemEdit(item.id)}
+                              className="inline-flex items-center justify-center rounded-md border border-neutral-800 p-2 text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3.5 w-3.5"
+                              >
+                                <path d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                          <h4 className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+                            Acceptable Answers
+                          </h4>
+                        </div>
+
+                        <div className="space-y-3">
+                          {item.answers.map((ans, aIdx) => (
+                            <div
+                              key={`${item.id}-ans-${aIdx}`}
+                              className="flex items-center gap-2"
+                            >
+                              <input
+                                value={ans}
+                                onChange={(event) => handleMultiAnswerChangeEdit(item.id, aIdx, event.target.value)}
+                                placeholder="Case-sensitive answer"
+                                className="flex-1 rounded-md border border-neutral-800 bg-transparent px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                              />
+                              {item.answers.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveMultiAnswerEdit(item.id, aIdx)}
+                                  className="inline-flex items-center justify-center rounded-md border border-neutral-800 p-2 text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+                                >
+                                  <svg
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    className="h-3.5 w-3.5"
+                                  >
+                                    <path d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleAddMultiAnswerEdit(item.id)}
+                            className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-2.5 py-1.5 text-[11px] font-medium text-neutral-200 transition hover:border-neutral-500 hover:bg-neutral-900 cursor-pointer"
+                          >
+                            Add Answer
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
               <div className="mt-4 flex flex-col gap-3 border-t border-neutral-900 pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-xs text-neutral-500">
                   {editState.questionType === "mcq"
                     ? `Minimum ${MIN_CHOICES} choices. You can mark multiple choices as correct to support select-all-that-apply questions.`
-                    : "Provide at least one acceptable answer. Matching is case sensitive."}
+                    : editState.questionType === "identification"
+                    ? "Provide at least one acceptable answer. Matching is case sensitive."
+                    : "Add at least one item with an acceptable answer. Matching is case sensitive and each item is worth 2 points."}
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="rounded-md border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wide text-neutral-400">
@@ -1259,7 +1607,7 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                   <button
                     type="button"
                     onClick={handleSubmitEdit}
-                    disabled={!isEditValid || editState.isSubmitting}
+                    disabled={!isEditValid || editState.isSubmitting || !hasEdits}
                     className="inline-flex items-center justify-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-5 py-2 text-sm font-medium text-black transition hover:bg-white cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <svg

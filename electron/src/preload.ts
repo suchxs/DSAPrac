@@ -247,6 +247,7 @@ export interface ElectronAPI {
   updateTheory: (tag: string, answeredDelta: number | string[]) => Promise<ProgressData>;
   setPracticalDone: (problemId: string, done: boolean, totalTests?: number) => Promise<ProgressData>;
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
+  resetTheoryProgress: (lessons: string[]) => Promise<ProgressData>;
   getQuestionCounts: () => Promise<QuestionCounts>;
   createTheoreticalQuestion: (payload: CreateTheoreticalQuestionPayload) => Promise<CreateQuestionResult>;
   listTheoreticalQuestions: () => Promise<TheoreticalQuestionRecord[]>;
@@ -305,6 +306,8 @@ const api: ElectronAPI = {
     ipcRenderer.invoke('progress:setPracticalDone', problemId, done, totalTests),
   recordActivity: (dateKey?: string) =>
     ipcRenderer.invoke('progress:recordActivity', dateKey),
+  resetTheoryProgress: (lessons: string[]) =>
+    ipcRenderer.invoke('progress:resetTheory', lessons),
   getQuestionCounts: () => ipcRenderer.invoke('questions:getCounts'),
   createTheoreticalQuestion: (payload) =>
     ipcRenderer.invoke('theory:createQuestion', payload),

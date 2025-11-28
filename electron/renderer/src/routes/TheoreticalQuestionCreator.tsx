@@ -25,12 +25,20 @@ const createChoice = (index: number): Choice => ({
   isCorrect: false,
 });
 
+type MultiItem = { id: string; subtitle: string; answers: string[] };
+const createMultiItem = (): MultiItem => ({
+  id: `multi-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+  subtitle: '',
+  answers: [''],
+});
+
 const TheoreticalQuestionCreator: React.FC = () => {
   const navigate = useNavigate();
   const [question, setQuestion] = useState('');
-  const [questionType, setQuestionType] = useState<'mcq' | 'identification'>('mcq');
+  const [questionType, setQuestionType] = useState<'mcq' | 'identification' | 'multi-identification'>('mcq');
   const [choices, setChoices] = useState<Choice[]>([]);
   const [identificationAnswers, setIdentificationAnswers] = useState<string[]>(['']);
+  const [multiItems, setMultiItems] = useState<MultiItem[]>([createMultiItem()]);
   const [section, setSection] = useState('');
   const [lesson, setLesson] = useState('');
   const [images, setImages] = useState<ImageItem[]>([]);
@@ -53,8 +61,10 @@ const TheoreticalQuestionCreator: React.FC = () => {
     () =>
       questionType === 'mcq'
         ? choices.reduce((count, choice) => (choice.isCorrect ? count + 1 : count), 0)
-        : identificationAnswers.filter((a) => a.trim().length > 0).length,
-    [choices, questionType, identificationAnswers]
+        : questionType === 'identification'
+        ? identificationAnswers.filter((a) => a.trim().length > 0).length
+        : multiItems.filter((item) => item.answers.some((a) => a.trim().length > 0)).length,
+    [choices, questionType, identificationAnswers, multiItems]
   );
 
   const lessonOptions = useMemo(() => {
@@ -100,6 +110,51 @@ const TheoreticalQuestionCreator: React.FC = () => {
     setIdentificationAnswers((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const handleAddMultiItem = () => {
+    setMultiItems((prev) => [...prev, createMultiItem()]);
+  };
+
+  const handleRemoveMultiItem = (id: string) => {
+    setMultiItems((prev) => (prev.length > 1 ? prev.filter((item) => item.id !== id) : prev));
+  };
+
+  const handleMultiSubtitleChange = (id: string, value: string) => {
+    setMultiItems((prev) => prev.map((item) => (item.id === id ? { ...item, subtitle: value } : item)));
+  };
+
+  const handleAddMultiAnswer = (id: string) => {
+    setMultiItems((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, answers: [...item.answers, ''] } : item
+      )
+    );
+  };
+
+  const handleMultiAnswerChange = (id: string, idx: number, value: string) => {
+    setMultiItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? { ...item, answers: item.answers.map((ans, i) => (i === idx ? value : ans)) }
+          : item
+      )
+    );
+  };
+
+  const handleRemoveMultiAnswer = (id: string, idx: number) => {
+    setMultiItems((prev) =>
+      prev.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              answers: item.answers.filter((_, i) => i !== idx).length > 0
+                ? item.answers.filter((_, i) => i !== idx)
+                : [''],
+            }
+          : item
+      )
+    );
+  };
+
   const handleSectionChange = (value: string) => {
     setSection(value);
     setLesson('');
@@ -124,7 +179,7 @@ const TheoreticalQuestionCreator: React.FC = () => {
     }
 
     if (!['image/png', 'image/jpeg'].includes(file.type)) {
-      setImageError('Unsupported file type. Please choose a PNG or JPG image.');
+      setImageError('Unsupported file type. Please choose a PNG, JPG, or GIF image.');
       return;
     }
 
@@ -222,11 +277,17 @@ const TheoreticalQuestionCreator: React.FC = () => {
       const filledChoices = choices.every((choice) => choice.text.trim().length > 0);
       if (!filledChoices) return false;
       return correctCount > 0;
-    } else {
+    } else if (questionType === 'identification') {
       const filledIds = identificationAnswers.filter((a) => a.trim().length > 0).length;
       return filledIds > 0;
+    } else {
+      if (multiItems.length === 0) return false;
+      const allHaveAnswer = multiItems.every((item) =>
+        item.answers.some((ans) => ans.trim().length > 0)
+      );
+      return allHaveAnswer;
     }
-  }, [question, section, lesson, author, choices, correctCount, questionType, identificationAnswers]);
+  }, [question, section, lesson, author, choices, correctCount, questionType, identificationAnswers, multiItems]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -256,6 +317,15 @@ const TheoreticalQuestionCreator: React.FC = () => {
         identificationAnswers: questionType === 'identification'
           ? identificationAnswers.filter((a) => a.trim().length > 0)
           : undefined,
+        multiIdentificationItems:
+          questionType === 'multi-identification'
+            ? multiItems
+                .map((item) => ({
+                  subtitle: item.subtitle.trim(),
+                  answers: item.answers.map((a) => a.trim()).filter((a) => a.length > 0),
+                }))
+                .filter((item) => item.answers.length > 0)
+            : undefined,
         isPreviousExam,
         examSchoolYear: isPreviousExam ? examSchoolYear : undefined,
         examSemester: isPreviousExam ? examSemester : undefined,
@@ -388,7 +458,7 @@ const TheoreticalQuestionCreator: React.FC = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/png,image/jpeg"
+                accept="image/png,image/jpeg,image/gif"
                 className="hidden"
                 onChange={handleImageChange}
               />
@@ -601,6 +671,15 @@ const TheoreticalQuestionCreator: React.FC = () => {
                 />
                 Identification
               </label>
+              <label className="flex items-center gap-2 text-xs text-neutral-200">
+                <input
+                  type="radio"
+                  checked={questionType === 'multi-identification'}
+                  onChange={() => setQuestionType('multi-identification')}
+                  className="h-3 w-3 text-blue-500 bg-neutral-900 border-neutral-700"
+                />
+                Multiple Identification
+              </label>
             </div>
 
             {questionType === 'mcq' ? (
@@ -669,14 +748,14 @@ const TheoreticalQuestionCreator: React.FC = () => {
                           </div>
 
                           <div className="ml-auto flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleCorrect(choice.id)}
-                          className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
-                            isCorrect
-                              ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
-                              : 'border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900'
-                          }`}
+                            <button
+                              type="button"
+                              onClick={() => toggleCorrect(choice.id)}
+                              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
+                                isCorrect
+                                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+                                  : 'border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900'
+                              }`}
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -692,10 +771,10 @@ const TheoreticalQuestionCreator: React.FC = () => {
                               </svg>
                               {isCorrect ? 'Correct Answer' : 'Mark Correct'}
                             </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveChoice(choice.id)}
-                          className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveChoice(choice.id)}
+                              className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
                             >
                               <svg
                                 xmlns="http://www.w3.org/2000/svg"
@@ -728,7 +807,7 @@ const TheoreticalQuestionCreator: React.FC = () => {
                   })}
                 </div>
               </>
-            ) : (
+            ) : questionType === 'identification' ? (
               <div className="flex flex-col gap-3">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
@@ -776,13 +855,112 @@ const TheoreticalQuestionCreator: React.FC = () => {
                   </div>
                 ))}
               </div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
+                    Items & Answers
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={handleAddMultiItem}
+                    className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-3.5 w-3.5"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add Item
+                  </button>
+                </div>
+                <div className="grid gap-3">
+                  {multiItems.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border border-neutral-800 bg-neutral-950 p-4 space-y-4"
+                    >
+                      <div className="flex flex-col gap-3">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="text-xs uppercase tracking-wide text-neutral-500">
+                            Item {idx + 1}
+                          </div>
+                          <input
+                            type="text"
+                            value={item.subtitle}
+                            onChange={(e) => handleMultiSubtitleChange(item.id, e.target.value)}
+                            placeholder="Optional subtitle / prompt"
+                            className="flex-1 min-w-[200px] rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                          />
+                          {multiItems.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMultiItem(item.id)}
+                              className="text-xs text-rose-300 hover:text-rose-200 px-2 py-1 rounded border border-rose-400/40 bg-rose-500/10 cursor-pointer"
+                            >
+                              Remove Item
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between pb-2 border-b border-neutral-800">
+                          <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
+                            Acceptable Answers
+                          </h3>
+                        </div>
+                        <div className="space-y-3 mt-2">
+                          {item.answers.map((ans, aIdx) => (
+                            <div key={`${item.id}-ans-${aIdx}`} className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={ans}
+                                onChange={(e) => handleMultiAnswerChange(item.id, aIdx, e.target.value)}
+                                placeholder="Case-sensitive answer"
+                                className="flex-1 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 text-sm text-white outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                              />
+                              {item.answers.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveMultiAnswer(item.id, aIdx)}
+                                  className="text-[11px] text-rose-300 hover:text-rose-200 px-2 py-1 rounded border border-rose-400/40 bg-rose-500/10 cursor-pointer"
+                                >
+                                  Remove
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                        <div className="pt-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => handleAddMultiAnswer(item.id)}
+                            className="inline-flex items-center gap-2 rounded-md border border-neutral-700 px-3 py-1.5 text-[11px] font-medium text-neutral-100 transition hover:border-neutral-500 hover:bg-neutral-800 cursor-pointer"
+                          >
+                            Add Answer
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 
           <div className="mt-10 flex flex-col gap-3 border-t border-neutral-900 pt-6 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-neutral-500">
-              Minimum {MIN_CHOICES} choices. You can mark multiple choices as correct to support
-              select-all-that-apply questions.
+              {questionType === 'mcq'
+                ? `Minimum ${MIN_CHOICES} choices. You can mark multiple choices as correct to support select-all-that-apply questions.`
+                : questionType === 'identification'
+                ? 'Provide at least one acceptable answer. Matching is case sensitive.'
+                : 'Add at least one item with an acceptable answer. Matching is case sensitive and each item is worth 2 points.'}
             </div>
             <button
               type="submit"

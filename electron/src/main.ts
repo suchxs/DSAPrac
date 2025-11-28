@@ -67,14 +67,16 @@ type PracticalHistoryEntry = {
 
 type ChoicePayload = { text: string; isCorrect: boolean };
 type ImagePayload = { name: string; dataUrl: string; order?: number };
+type MultiIdentificationItem = { subtitle?: string; answers: string[] };
 type CreateTheoreticalQuestionPayload = {
   question: string;
   section: string;
   lesson: string;
   author: string;
   choices: ChoicePayload[];
-  questionType?: 'mcq' | 'identification';
+  questionType?: 'mcq' | 'identification' | 'multi-identification';
   identificationAnswers?: string[];
+  multiIdentificationItems?: MultiIdentificationItem[];
   image?: ImagePayload | null;  // Legacy single image support
   images?: ImagePayload[];      // New multiple images support
   isPreviousExam?: boolean;
@@ -94,8 +96,9 @@ type TheoreticalQuestionRecord = {
   author?: string;
   choices: ListedChoice[];
   correctCount: number;
-  questionType?: 'mcq' | 'identification';
+  questionType?: 'mcq' | 'identification' | 'multi-identification';
   identificationAnswers?: string[];
+  multiIdentificationItems?: MultiIdentificationItem[];
   imageDataUrl?: string | null;   // Legacy single image
   imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
@@ -113,8 +116,9 @@ type UpdateTheoreticalQuestionPayload = {
   question: string;
   author?: string;
   choices: ChoicePayload[];
-  questionType?: 'mcq' | 'identification';
+  questionType?: 'mcq' | 'identification' | 'multi-identification';
   identificationAnswers?: string[];
+  multiIdentificationItems?: MultiIdentificationItem[];
   image?: ImagePayload | null;    // Legacy single image support
   images?: ImagePayload[];        // New multiple images support
   isPreviousExam?: boolean;
@@ -275,6 +279,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   developerConsoleEnabled: false,
   developerConsoleKey: '`',
 };
+
+function enableDevtoolsForWindow(win: BrowserWindow) {
+  // Devtools intentionally disabled
+}
 
 function readSettings(): AppSettings {
   const settingsPath = getSettingsPath();
@@ -580,7 +588,7 @@ function wireConsoleForwarding(win: BrowserWindow, label: string) {
 
 function parseImageDataUrl(dataUrl: string): { buffer: Buffer; extension: string } {
   // More permissive regex that handles edge cases with long base64 strings
-  const match = /^data:(image\/(png|jpeg));base64,(.+)$/s.exec(dataUrl);
+  const match = /^data:(image\/(png|jpeg|gif));base64,(.+)$/s.exec(dataUrl);
   if (!match) {
     throw new Error('INVALID_IMAGE_DATA');
   }
@@ -622,7 +630,7 @@ function parseScalarValue(value: string): string | number | boolean {
   if (!trimmed) return '';
   if (trimmed === 'true') return true;
   if (trimmed === 'false') return false;
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return trimmed; // preserve numeric-looking strings
   if (
     (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
     (trimmed.startsWith("'") && trimmed.endsWith("'"))
@@ -770,6 +778,75 @@ function parseTheoreticalQuestionFile(filePath: string): {
         break;
       }
       meta.identification_answers = answers;
+      idx = j;
+      continue;
+    }
+
+    if (trimmed.startsWith('multi_identification_items:')) {
+      const items: MultiIdentificationItem[] = [];
+      let j = idx + 1;
+      let current: MultiIdentificationItem | null = null;
+
+      while (j < lines.length) {
+        const rawLine = lines[j];
+        const l = rawLine.trim();
+        if (!l) {
+          j += 1;
+          continue;
+        }
+        // Stop if indentation drops (new key)
+        if (!rawLine.startsWith(' ')) break;
+
+        if (l.startsWith('-')) {
+          if (current) items.push(current);
+          current = { subtitle: undefined, answers: [] };
+          const inlineSubtitle = l.match(/-\s*subtitle:\s*(.*)/);
+          if (inlineSubtitle && inlineSubtitle[1]) {
+            current.subtitle = parseScalarValue(`:${inlineSubtitle[1]}`) as string;
+          }
+          j += 1;
+          continue;
+        }
+
+        if (!current) {
+          j += 1;
+          continue;
+        }
+
+        if (l.startsWith('subtitle:')) {
+          current.subtitle = parseScalarValue(l.slice('subtitle:'.length)) as string;
+          j += 1;
+          continue;
+        }
+
+        if (l.startsWith('answers:')) {
+          j += 1;
+          while (j < lines.length) {
+            const ansRaw = lines[j];
+            const ansTrim = ansRaw.trim();
+            if (!ansTrim) {
+              j += 1;
+              continue;
+            }
+            const leadingSpaces = ansRaw.length - ansRaw.trimStart().length;
+            // If indentation is at or above item level (<=2 spaces), this is a new item or sibling key
+            if (leadingSpaces <= 2) break;
+            if (ansTrim.startsWith('-')) {
+              const val = ansTrim.replace(/^-+\s*/, '');
+              if (val) current.answers.push(parseScalarValue(val) as string);
+              j += 1;
+              continue;
+            }
+            break;
+          }
+          continue;
+        }
+
+        j += 1;
+      }
+
+      if (current) items.push(current);
+      meta.multi_identification_items = items;
       idx = j;
       continue;
     }
@@ -969,6 +1046,8 @@ function createWindow() {
       preload: preloadPath,
     },
   });
+
+  enableDevtoolsForWindow(mainWindow);
 
   // macOS dock icon (BrowserWindow.icon is ignored on macOS for dock)
   if (process.platform === 'darwin' && fs.existsSync(iconPath)) {
@@ -1177,6 +1256,27 @@ app.whenReady().then(() => {
     return p;
   });
 
+  ipcMain.handle('progress:resetTheory', (_evt, lessons: string[]) => {
+    if (!Array.isArray(lessons) || lessons.length === 0) {
+      throw new Error('No lessons provided to reset.');
+    }
+    const progress = readProgress();
+    lessons.forEach((lesson) => {
+      if (!progress.theory[lesson]) {
+        progress.theory[lesson] = { answered: 0, total: 0, answeredQuestions: [] };
+      } else {
+        progress.theory[lesson].answered = 0;
+        progress.theory[lesson].answeredQuestions = [];
+        progress.theory[lesson].lastAnsweredAt = undefined;
+      }
+    });
+    syncProgressTotals(progress);
+    writeProgress(progress);
+    const counts = calculateQuestionCounts(progress);
+    broadcastDataRefresh({ counts, progress });
+    return progress;
+  });
+
   ipcMain.handle('progress:setPracticalDone', (_evt, problemId: string, done: boolean, totalTests?: number) => {
     const progress = readProgress();
     const entry = ensurePracticalProgressEntry(progress, problemId, totalTests ?? 0);
@@ -1248,9 +1348,15 @@ app.whenReady().then(() => {
       throw new Error('Selected lesson does not belong to the chosen section.');
     }
 
-    const questionType = payload.questionType === 'identification' ? 'identification' : 'mcq';
+    const questionType =
+      payload.questionType === 'identification'
+        ? 'identification'
+        : payload.questionType === 'multi-identification'
+        ? 'multi-identification'
+        : 'mcq';
     let normalizedChoices: ChoicePayload[] = [];
     let correctCount = 0;
+    let multiItems: MultiIdentificationItem[] = [];
     if (questionType === 'mcq') {
       if (!Array.isArray(choices)) {
         throw new Error('Choices payload is invalid.');
@@ -1277,13 +1383,30 @@ app.whenReady().then(() => {
       if (correctCount === 0) {
         throw new Error('At least one correct answer is required.');
       }
-    } else {
+    } else if (questionType === 'identification') {
       const answers = Array.isArray(payload.identificationAnswers) ? payload.identificationAnswers.map(a => (typeof a === 'string' ? a.trim() : '')).filter(Boolean) : [];
       if (answers.length === 0) {
         throw new Error('At least one identification answer is required.');
       }
       normalizedChoices = [];
       correctCount = answers.length;
+    } else {
+      const itemsRaw = Array.isArray(payload.multiIdentificationItems) ? payload.multiIdentificationItems : [];
+      multiItems = itemsRaw
+        .map((item) => {
+          const answers = Array.isArray(item.answers)
+            ? item.answers.map((a) => (typeof a === 'string' ? a.trim() : '')).filter(Boolean)
+            : [];
+          const subtitle =
+            typeof item.subtitle === 'string' && item.subtitle.trim() ? item.subtitle.trim() : undefined;
+          return { subtitle, answers };
+        })
+        .filter((item) => item.answers.length > 0);
+      if (multiItems.length === 0) {
+        throw new Error('At least one item with an acceptable answer is required.');
+      }
+      normalizedChoices = [];
+      correctCount = multiItems.length;
     }
 
     const createdAt = new Date().toISOString();
@@ -1361,11 +1484,23 @@ app.whenReady().then(() => {
         }
       }
 
-      frontmatterLines.push(`question_type: ${payload.questionType === 'identification' ? 'identification' : 'mcq'}`);
-      if (payload.questionType === 'identification') {
+      frontmatterLines.push(`question_type: ${questionType}`);
+      if (questionType === 'identification') {
         frontmatterLines.push('identification_answers:');
         (payload.identificationAnswers || []).forEach((ans) => {
           frontmatterLines.push(`  - ${ans.replace(/"/g, '\\"')}`);
+        });
+      } else if (questionType === 'multi-identification') {
+        frontmatterLines.push('multi_identification_items:');
+        multiItems.forEach((item) => {
+          frontmatterLines.push('  -');
+          if (item.subtitle) {
+            frontmatterLines.push(`    subtitle: ${JSON.stringify(item.subtitle)}`);
+          }
+          frontmatterLines.push('    answers:');
+          item.answers.forEach((ans) => {
+            frontmatterLines.push(`      - ${ans.replace(/"/g, '\\"')}`);
+          });
         });
       } else {
         frontmatterLines.push('choices:');
@@ -1457,16 +1592,34 @@ app.whenReady().then(() => {
                   .map((a) => (typeof a === 'string' ? a.trim() : ''))
                   .filter(Boolean)
               : [];
+            const multiIdentificationItems = Array.isArray((meta as any).multi_identification_items)
+              ? ((meta as any).multi_identification_items as any[]).map((item) => {
+                  const subtitle =
+                    item && typeof item.subtitle === 'string' && item.subtitle.trim()
+                      ? item.subtitle.trim()
+                      : undefined;
+                  const answers = Array.isArray(item.answers)
+                    ? item.answers
+                        .map((a: any) => (typeof a === 'string' ? a.trim() : ''))
+                        .filter(Boolean)
+                    : [];
+                  return { subtitle, answers };
+                })
+              : [];
             const questionType =
               meta.question_type === 'identification'
                 ? 'identification'
+                : meta.question_type === 'multi-identification' || meta.question_type === 'multi_identification'
+                ? 'multi-identification'
                 : 'mcq';
             const correctCount =
               typeof meta.correct_count === 'number'
                 ? (meta.correct_count as number)
                 : questionType === 'mcq'
                 ? choices.filter((choice) => choice.isCorrect).length
-                : identificationAnswers.length;
+                : questionType === 'identification'
+                ? identificationAnswers.length
+                : multiIdentificationItems.length;
 
             let imageDataUrl: string | undefined;
             let imageDataUrls: string[] | undefined;
@@ -1480,8 +1633,12 @@ app.whenReady().then(() => {
                   if (fs.existsSync(imagePath)) {
                     const ext = path.extname(imgFileName).toLowerCase();
                     const mime =
-                      ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg'
+                      ext === '.png'
+                        ? 'image/png'
+                        : ext === '.jpg' || ext === '.jpeg'
                         ? 'image/jpeg'
+                        : ext === '.gif'
+                        ? 'image/gif'
                         : null;
                     if (mime) {
                       const base64 = fs.readFileSync(imagePath, { encoding: 'base64' });
@@ -1501,8 +1658,12 @@ app.whenReady().then(() => {
               if (fs.existsSync(imagePath)) {
                 const ext = path.extname(imageFileName).toLowerCase();
                 const mime =
-                  ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg'
+                  ext === '.png'
+                    ? 'image/png'
+                    : ext === '.jpg' || ext === '.jpeg'
                     ? 'image/jpeg'
+                    : ext === '.gif'
+                    ? 'image/gif'
                     : null;
                 if (mime) {
                   const base64 = fs.readFileSync(imagePath, { encoding: 'base64' });
@@ -1530,6 +1691,7 @@ app.whenReady().then(() => {
               correctCount,
               questionType,
               identificationAnswers,
+              multiIdentificationItems,
               imageDataUrl,
               imageDataUrls,
               createdAt,
@@ -1570,13 +1732,19 @@ app.whenReady().then(() => {
       throw new Error('Question text is required.');
     }
 
-  if (!Array.isArray(payload.choices)) {
-    throw new Error('Choices payload is invalid.');
-  }
+    if (!Array.isArray(payload.choices)) {
+      throw new Error('Choices payload is invalid.');
+    }
 
-    const questionTypeUpdate = payload.questionType === 'identification' ? 'identification' : 'mcq';
+    const questionTypeUpdate =
+      payload.questionType === 'identification'
+        ? 'identification'
+        : payload.questionType === 'multi-identification'
+        ? 'multi-identification'
+        : 'mcq';
     let normalizedChoices: ChoicePayload[] = [];
     let correctCount = 0;
+    let multiItems: MultiIdentificationItem[] = [];
     if (questionTypeUpdate === 'mcq') {
       if (payload.choices.length < THEORY_MIN_CHOICES || payload.choices.length > THEORY_MAX_CHOICES) {
         throw new Error(
@@ -1598,7 +1766,7 @@ app.whenReady().then(() => {
       if (correctCount === 0) {
         throw new Error('At least one correct answer is required.');
       }
-    } else {
+    } else if (questionTypeUpdate === 'identification') {
       const answers = Array.isArray(payload.identificationAnswers)
         ? payload.identificationAnswers.map((a) => (typeof a === 'string' ? a.trim() : '')).filter(Boolean)
         : [];
@@ -1607,6 +1775,23 @@ app.whenReady().then(() => {
       }
       normalizedChoices = [];
       correctCount = answers.length;
+    } else {
+      const itemsRaw = Array.isArray(payload.multiIdentificationItems) ? payload.multiIdentificationItems : [];
+      multiItems = itemsRaw
+        .map((item) => {
+          const answers = Array.isArray(item.answers)
+            ? item.answers.map((a) => (typeof a === 'string' ? a.trim() : '')).filter(Boolean)
+            : [];
+          const subtitle =
+            typeof item.subtitle === 'string' && item.subtitle.trim() ? item.subtitle.trim() : undefined;
+          return { subtitle, answers };
+        })
+        .filter((item) => item.answers.length > 0);
+      if (multiItems.length === 0) {
+        throw new Error('At least one item with an acceptable answer is required.');
+      }
+      normalizedChoices = [];
+      correctCount = multiItems.length;
     }
 
     const baseDir = path.resolve(getTheoryBaseDir());
@@ -1784,11 +1969,23 @@ app.whenReady().then(() => {
       }
     }
 
-      frontmatterLines.push(`question_type: ${payload.questionType === 'identification' ? 'identification' : 'mcq'}`);
-      if (payload.questionType === 'identification') {
+      frontmatterLines.push(`question_type: ${questionTypeUpdate}`);
+      if (questionTypeUpdate === 'identification') {
         frontmatterLines.push('identification_answers:');
         (payload.identificationAnswers || []).forEach((ans) => {
           frontmatterLines.push(`  - ${ans.replace(/"/g, '\\"')}`);
+        });
+      } else if (questionTypeUpdate === 'multi-identification') {
+        frontmatterLines.push('multi_identification_items:');
+        multiItems.forEach((item) => {
+          frontmatterLines.push('  -');
+          if (item.subtitle) {
+            frontmatterLines.push(`    subtitle: ${JSON.stringify(item.subtitle)}`);
+          }
+          frontmatterLines.push('    answers:');
+          item.answers.forEach((ans) => {
+            frontmatterLines.push(`      - ${ans.replace(/"/g, '\\"')}`);
+          });
         });
       } else {
         frontmatterLines.push('choices:');
@@ -2164,7 +2361,13 @@ app.whenReady().then(() => {
                     try {
                       const imageBuffer = fs.readFileSync(imagePath);
                       const ext = path.extname(imagePath).toLowerCase();
-                      const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null;
+                      const mimeType = ext === '.png'
+                        ? 'image/png'
+                        : ext === '.jpg' || ext === '.jpeg'
+                        ? 'image/jpeg'
+                        : ext === '.gif'
+                        ? 'image/gif'
+                        : null;
                       if (mimeType) {
                         imageDataUrls.push(`data:${mimeType};base64,${imageBuffer.toString('base64')}`);
                       }
@@ -2185,7 +2388,13 @@ app.whenReady().then(() => {
                 try {
                   const imageBuffer = fs.readFileSync(imagePath);
                   const ext = path.extname(imagePath).toLowerCase();
-                  const mimeType = ext === '.png' ? 'image/png' : ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' : null;
+                  const mimeType = ext === '.png'
+                    ? 'image/png'
+                    : ext === '.jpg' || ext === '.jpeg'
+                    ? 'image/jpeg'
+                    : ext === '.gif'
+                    ? 'image/gif'
+                    : null;
                   if (mimeType) {
                     imageDataUrl = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
                     imageDataUrls = [imageDataUrl];
@@ -3258,6 +3467,7 @@ app.whenReady().then(() => {
                   }
                   if (problemSolverWindow) {
                     wireConsoleForwarding(problemSolverWindow, 'practical');
+                    enableDevtoolsForWindow(problemSolverWindow);
                   }
 
                   // Clean up when window is closed
@@ -3593,6 +3803,7 @@ app.whenReady().then(() => {
       },
     });
 
+    enableDevtoolsForWindow(compareWin);
     compareWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
     return { success: true };
   });
