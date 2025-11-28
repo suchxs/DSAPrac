@@ -1,0 +1,47 @@
+{
+  "id": "practical-1764322620832-f36e9ff5",
+  "title": "Boku",
+  "description": "ddxdx",
+  "difficulty": "Medium",
+  "section": "Section 2",
+  "lesson": "SET and ADT Set",
+  "author": "suchxs",
+  "files": [
+    {
+      "filename": "main.rs",
+      "content": "fn main() {\n    println!(\"TestLol!\");\n}\n",
+      "is_locked": false,
+      "is_answer_file": true,
+      "language": "rust"
+    }
+  ],
+  "test_cases": [
+    {
+      "input": "",
+      "expected_output": "TestLol!",
+      "is_hidden": false,
+      "execution_time": 61,
+      "memory_usage": 0
+    },
+    {
+      "input": "",
+      "expected_output": "TestLol!",
+      "is_hidden": true,
+      "execution_time": 59,
+      "memory_usage": 0
+    },
+    {
+      "input": "",
+      "expected_output": "TestLol!",
+      "is_hidden": false,
+      "execution_time": 63,
+      "memory_usage": 0
+    }
+  ],
+  "created_at": "2025-11-28T09:37:00.831Z",
+  "updated_at": "2025-11-28T09:37:00.831Z",
+  "images": [
+    "practical-1764322620832-f36e9ff5-0.jpg",
+    "practical-1764322620832-f36e9ff5-1.jpg"
+  ]
+}

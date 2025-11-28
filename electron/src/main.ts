@@ -134,7 +134,7 @@ type CodeFilePayload = {
   isLocked: boolean;
   isAnswerFile: boolean;
   isHidden: boolean;
-  language: 'c' | 'cpp';
+  language: 'c' | 'cpp' | 'rust';
 };
 
 type CreatePracticalQuestionPayload = {
@@ -2050,7 +2050,7 @@ app.whenReady().then(() => {
                   isLocked: !!f.is_locked,
                   isAnswerFile: !!f.is_answer_file,
                   isHidden: !!f.is_hidden,
-                  language: (f.language === 'c' || f.language === 'cpp') ? f.language : 'c',
+                  language: (f.language === 'c' || f.language === 'cpp' || f.language === 'rust') ? f.language : 'c',
                 }))
               : [];
 
@@ -2666,12 +2666,12 @@ app.whenReady().then(() => {
       // Determine the language first (assume all files use the same language)
       const language = files[0].language;
       
-      // Prepare files for Rust backend, injecting unbuffering code
+      // Prepare files for Rust backend, injecting unbuffering code (C/C++ only)
       const preparedFiles = files.map(file => {
         let content = file.content;
         
         // Inject unbuffering code into files with main function
-        if (file.filename.toLowerCase().includes('main') || files.length === 1) {
+        if ((language === 'c' || language === 'cpp') && (file.filename.toLowerCase().includes('main') || files.length === 1)) {
           console.log('[Terminal] Injecting unbuffer code into', file.filename);
           // For C/C++ files, inject setvbuf calls at the start of main
           content = content.replace(
@@ -2704,7 +2704,7 @@ app.whenReady().then(() => {
       
       const compileStart = Date.now();
       const compileResult = await sendBackendCommand<CompileResult>('execute', {
-        language: language === 'cpp' ? 'cpp' : 'c',
+        language: language === 'cpp' ? 'cpp' : language === 'rust' ? 'rust' : 'c',
         files: preparedFiles,
       }, 30000); // 30 second timeout
       
@@ -3022,7 +3022,7 @@ app.whenReady().then(() => {
                         isLocked: !!f.is_locked,
                         isAnswerFile: !!f.is_answer_file,
                         isHidden: !!f.is_hidden,
-                        language: f.language === 'cpp' ? 'cpp' : 'c',
+                        language: f.language === 'cpp' ? 'cpp' : f.language === 'rust' ? 'rust' : 'c',
                       }))
                     : [];
 
@@ -3323,12 +3323,14 @@ app.whenReady().then(() => {
         const executablePath = path.join(tempDir, executableName);
 
         // Compile the code
-        const compiler = language === 'cpp' ? 'g++' : 'gcc';
+        const compiler = language === 'cpp' ? 'g++' : language === 'rust' ? 'rustc' : 'gcc';
         const sourceFiles = payload.files
           .filter(f => !f.filename.match(/\.(h|hpp)$/i))
           .map(f => f.filename);
 
-        const compileArgs = [...sourceFiles, '-o', executableName];
+        const compileArgs = language === 'rust'
+          ? [...sourceFiles, '-O', '-o', executableName]
+          : [...sourceFiles, '-o', executableName];
 
         const compileResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
           const compileProcess = spawn(compiler, compileArgs, { cwd: tempDir });
@@ -3517,25 +3519,25 @@ app.whenReady().then(() => {
 
   ipcMain.handle('submit-practical-solution', async (_event, payload: { questionId: string; files: any[]; testCases: any[] }) => {
     try {
-      const language = payload.files[0]?.language === 'cpp' ? 'cpp' : 'c';
+      const language = payload.files[0]?.language === 'cpp' ? 'cpp' : payload.files[0]?.language === 'rust' ? 'rust' : 'c';
 
-      // Prepare files similar to terminal execution (unbuffer stdout/stderr/stdin)
-      const preparedFiles = payload.files.map((file: any) => {
-        let content = file.content;
-        if (file.filename.toLowerCase().includes('main') || payload.files.length === 1) {
-          content = content.replace(
-            /int\s+main\s*\([^)]*\)\s*\{/,
-            (match: string) => {
-              const unbufferSnippet =
-                language === 'c'
-                  ? '\n    setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); setvbuf(stdin, NULL, _IONBF, 0);'
-                  : '\n    std::setvbuf(stdout, NULL, _IONBF, 0); std::setvbuf(stderr, NULL, _IONBF, 0); std::setvbuf(stdin, NULL, _IONBF, 0);';
-              return match + unbufferSnippet;
-            }
-          );
-        }
-        return { filename: file.filename, content };
-      });
+        // Prepare files similar to terminal execution (unbuffer stdout/stderr/stdin)
+        const preparedFiles = payload.files.map((file: any) => {
+          let content = file.content;
+          if ((language === 'c' || language === 'cpp') && (file.filename.toLowerCase().includes('main') || payload.files.length === 1)) {
+            content = content.replace(
+              /int\s+main\s*\([^)]*\)\s*\{/,
+              (match: string) => {
+                const unbufferSnippet =
+                  language === 'c'
+                    ? '\n    setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); setvbuf(stdin, NULL, _IONBF, 0);'
+                    : '\n    std::setvbuf(stdout, NULL, _IONBF, 0); std::setvbuf(stderr, NULL, _IONBF, 0); std::setvbuf(stdin, NULL, _IONBF, 0);';
+                return match + unbufferSnippet;
+              }
+            );
+          }
+          return { filename: file.filename, content };
+        });
 
       interface CompileResult {
         success: boolean;

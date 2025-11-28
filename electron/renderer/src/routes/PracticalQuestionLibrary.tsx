@@ -75,6 +75,12 @@ const getDifficultyColor = (difficulty: string) => {
   }
 };
 
+const getLanguageBadge = (language: string | undefined) => {
+  if (language === 'rust') return { label: 'Rust', className: 'bg-amber-500/15 text-amber-200 border border-amber-500/40' };
+  if (language === 'cpp') return { label: 'C++', className: 'bg-purple-500/15 text-purple-200 border border-purple-500/40' };
+  return { label: 'C', className: 'bg-blue-500/15 text-blue-200 border border-blue-500/40' };
+};
+
 const PracticalQuestionLibrary: React.FC = () => {
   const navigate = useNavigate();
   const [questions, setQuestions] = useState<PracticalQuestionRecord[]>([]);
@@ -262,6 +268,9 @@ const PracticalQuestionLibrary: React.FC = () => {
                                 <h4 className="text-lg font-semibold text-white">
                                   {question.title}
                                 </h4>
+                                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${getLanguageBadge(question.files[0]?.language).className}`}>
+                                  {getLanguageBadge(question.files[0]?.language).label}
+                                </span>
                                 <span
                                   className={`text-xs font-semibold uppercase ${getDifficultyColor(
                                     question.difficulty

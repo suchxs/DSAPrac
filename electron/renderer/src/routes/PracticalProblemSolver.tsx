@@ -13,7 +13,7 @@ interface CodeFile {
   isLocked: boolean;
   isAnswerFile: boolean;
   isHidden: boolean;
-  language: 'c' | 'cpp';
+  language: 'c' | 'cpp' | 'rust';
 }
 
 interface TestCase {
@@ -871,7 +871,7 @@ const PracticalProblemSolver: React.FC = () => {
     if (!newFileName.trim() || !question) return;
     
     let filename = newFileName.trim();
-    const language = question.files[0]?.language || 'c';
+    const language = question.files[0]?.language === 'cpp' ? 'cpp' : question.files[0]?.language === 'rust' ? 'rust' : 'c';
     
     if (isHeaderFile) {
       // Ensure it ends with .h
@@ -1192,7 +1192,7 @@ const PracticalProblemSolver: React.FC = () => {
           <div className="flex-1">
             <Editor
               height="100%"
-              language={currentFile?.language === 'cpp' ? 'cpp' : 'c'}
+              language={currentFile?.language === 'cpp' ? 'cpp' : currentFile?.language === 'rust' ? 'rust' : 'c'}
               value={code}
               onChange={handleCodeChange}
               theme="vs-dark"

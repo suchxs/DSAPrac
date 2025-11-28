@@ -385,23 +385,27 @@ const PracticeMode: React.FC = () => {
                             const totalTests =
                               progressEntry?.totalTests ?? (question.testCases?.length ?? 0);
                             const attempts = progressEntry?.attempts ?? 0;
+                            const language = question.files[0]?.language || 'c';
+                            const langBadge =
+                              language === 'rust'
+                                ? { label: 'Rust', color: 'bg-amber-500/15 text-amber-200 border border-amber-500/40' }
+                                : language === 'cpp'
+                                ? { label: 'C++', color: 'bg-purple-500/15 text-purple-200 border border-purple-500/40' }
+                                : { label: 'C', color: 'bg-blue-500/15 text-blue-200 border border-blue-500/40' };
                             const difficultyStyles = getDifficultyStyles(question.difficulty);
 
-                            let statusLabel = 'Not started';
-                            let statusClass =
-                              'bg-zinc-800/60 text-zinc-300 border border-zinc-700/50';
+                            let statusLabel = 'NOT STARTED';
+                            let statusClass = 'text-zinc-300';
 
                             if (isCompleted) {
-                              statusLabel = 'Solved';
-                              statusClass =
-                                'bg-emerald-500/15 text-emerald-300 border border-emerald-500/40';
+                              statusLabel = 'SOLVED';
+                              statusClass = 'text-emerald-300';
                             } else if (attempts > 0) {
                               statusLabel =
                                 bestScore > 0 && totalTests > 0
-                                  ? `Attempted ${bestScore}/${totalTests}`
-                                  : 'Attempted';
-                              statusClass =
-                                'bg-amber-500/15 text-amber-300 border border-amber-500/40';
+                                  ? `ATTEMPTED ${bestScore}/${totalTests}`
+                                  : 'ATTEMPTED';
+                              statusClass = 'text-amber-300';
                             }
 
                             return (
@@ -418,6 +422,9 @@ const PracticeMode: React.FC = () => {
                                   <div className="flex items-center gap-2 min-w-0">
                                     <span className="text-sm font-medium truncate">
                                       {question.title}
+                                    </span>
+                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide ${langBadge.color}`}>
+                                      {langBadge.label}
                                     </span>
                                     <span
                                       className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${difficultyStyles.text} ${difficultyStyles.border}`}
@@ -439,9 +446,7 @@ const PracticeMode: React.FC = () => {
                                     )}
                                   </div>
                                   <div className="flex flex-wrap items-center gap-3 text-[11px] mt-2">
-                                    <span
-                                      className={`text-[10px] font-semibold px-2 py-0.5 rounded-full uppercase tracking-wide border ${statusClass}`}
-                                    >
+                                    <span className={`text-[10px] font-semibold uppercase tracking-wide ${statusClass}`}>
                                       {statusLabel}
                                     </span>
                                     {totalTests > 0 && (
@@ -450,7 +455,7 @@ const PracticeMode: React.FC = () => {
                                       </span>
                                     )}
                                     {!isCompleted && attempts > 0 && (
-                                      <span className="text-[10px] text-neutral-500 uppercase tracking-wide">
+                                      <span className="text-[10px] text-neutral-300 uppercase tracking-wide">
                                         {attempts} attempt{attempts === 1 ? '' : 's'}
                                       </span>
                                     )}

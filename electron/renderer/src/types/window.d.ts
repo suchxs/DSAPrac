@@ -177,7 +177,7 @@ export interface CodeFilePayload {
   isLocked: boolean; // If true, students cannot edit this file
   isAnswerFile: boolean; // If true, this file will be cleared in exam mode (keeps only comment)
   isHidden: boolean; // If true, this file is hidden from students but visible in library
-  language: 'c' | 'cpp';
+  language: 'c' | 'cpp' | 'rust';
 }
 
 export interface CreatePracticalQuestionPayload {
