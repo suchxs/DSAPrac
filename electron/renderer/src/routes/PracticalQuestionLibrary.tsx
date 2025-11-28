@@ -220,6 +220,10 @@ const PracticalQuestionLibrary: React.FC = () => {
           </button>
         </header>
 
+        <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Warning: Viewing or editing practical problems here affects what students see in practice/exam. Double-check code files and hidden tests before saving.
+        </div>
+
         {isLoading ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="rounded-lg border border-neutral-800 bg-neutral-900/60 px-6 py-4 text-sm text-neutral-400">

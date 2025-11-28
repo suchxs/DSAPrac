@@ -278,10 +278,11 @@ const PracticeMode: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 min-h-[500px]">
           {/* Theory Section */}
           <GlassCard className="p-3 flex flex-col min-h-[500px]">
-            <h2 className="text-sm font-semibold mb-0.5">Theory</h2>
-            <p className="text-xs opacity-80 mb-2">
+            <h2 className="text-base font-bold mb-0.5 uppercase text-white">Theory</h2>
+            <p className="text-xs opacity-80 mb-1">
               Multiple-choice questions. Select tags below.
             </p>
+            <div className="h-px w-full bg-white/10 mb-2" />
 
             <div className="space-y-4 flex-1 overflow-y-auto pr-2 scroll-smooth max-h-[420px]">
               {sections.map((section, sectionIdx) => (
@@ -290,7 +291,7 @@ const PracticeMode: React.FC = () => {
                   className={`pb-4 ${sectionIdx > 0 ? 'pt-4' : ''} ${sectionIdx < sections.length - 1 ? 'border-b border-white/10' : ''}`}
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-medium opacity-90">{section.name}</h3>
+                    <h3 className="text-[13px] font-semibold uppercase text-white tracking-wide">{section.name}</h3>
                     <button
                       className="text-blue-200 hover:text-white text-xs cursor-pointer"
                       onClick={() => toggleSection(section.id)}
@@ -351,10 +352,11 @@ const PracticeMode: React.FC = () => {
 
           {/* Practical Section */}
           <GlassCard className="p-3 flex flex-col min-h-[500px]">
-            <h2 className="text-sm font-semibold mb-0.5">Practical</h2>
-            <p className="text-xs opacity-80 mb-2">
+            <h2 className="text-base font-bold mb-0.5 uppercase text-white">Practical</h2>
+            <p className="text-xs opacity-80 mb-1">
               Select one problem to practice.
             </p>
+            <div className="h-px w-full bg-white/10 mb-2" />
 
             <div className="flex-1 overflow-y-auto pr-2 space-y-4 scroll-smooth max-h-[420px]" style={{ scrollbarWidth: 'thin' }}>
               {Object.keys(groupedPractical).length === 0 ? (
@@ -375,7 +377,7 @@ const PracticeMode: React.FC = () => {
                         key={lessonName} 
                         className={`pl-3 ${lessonIdx > 0 ? 'mt-4 pt-3 border-t border-white/5' : ''}`}
                       >
-                        <h4 className="text-xs font-medium opacity-70 mb-3">{lessonName}</h4>
+                        <h4 className="text-xs font-medium text-white/80 mb-3">{lessonName}</h4>
                         <div className="space-y-1.5">
                           {questions.map((question) => {
                             const isSelected = selectedPractical === question.id;
