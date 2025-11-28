@@ -80,6 +80,7 @@ pub async fn compile_files(files: Vec<CodeFile>, language: &str) -> Result<Compi
     let compiler = match language {
         "c" => "gcc",
         "cpp" => "g++",
+        "rust" => "rustc",
         _ => return Err(anyhow::anyhow!("Unsupported language: {}", language)),
     };
     
@@ -87,7 +88,10 @@ pub async fn compile_files(files: Vec<CodeFile>, language: &str) -> Result<Compi
     let source_files: Vec<PathBuf> = files.iter()
         .filter(|f| {
             let fname = f.filename.to_lowercase();
-            fname.ends_with(".c") || fname.ends_with(".cpp")
+            match language {
+                "rust" => fname.ends_with(".rs"),
+                _ => fname.ends_with(".c") || fname.ends_with(".cpp"),
+            }
         })
         .map(|f| temp_dir.path().join(&f.filename))
         .collect();
@@ -104,23 +108,30 @@ pub async fn compile_files(files: Vec<CodeFile>, language: &str) -> Result<Compi
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     
-    // Add source files
-    for source in &source_files {
-        cmd.arg(source.file_name().unwrap());
-    }
-    
-    // Add output and flags
-    cmd.arg("-o").arg(&executable_path);
-    
-    if language == "c" {
-        cmd.arg("-std=c99");
+    if language == "rust" {
+        for source in &source_files {
+            cmd.arg(source.file_name().unwrap());
+        }
+        cmd.arg("-O").arg("-o").arg(&executable_path);
     } else {
-        cmd.arg("-std=c++17");
+        // Add source files
+        for source in &source_files {
+            cmd.arg(source.file_name().unwrap());
+        }
+        
+        // Add output and flags
+        cmd.arg("-o").arg(&executable_path);
+        
+        if language == "c" {
+            cmd.arg("-std=c99");
+        } else {
+            cmd.arg("-std=c++17");
+        }
+        
+        cmd.arg("-O2")
+            .arg("-Wall")
+            .arg("-Wextra");
     }
-    
-    cmd.arg("-O2")
-        .arg("-Wall")
-        .arg("-Wextra");
     
     // Execute compilation with timeout
     let output = timeout(Duration::from_secs(15), cmd.output())

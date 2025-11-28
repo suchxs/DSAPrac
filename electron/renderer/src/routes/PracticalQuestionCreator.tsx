@@ -3,6 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { SECTION_OPTIONS } from '../constants/theorySections';
 import Editor from '@monaco-editor/react';
 import Terminal from '../components/Terminal';
+import cIcon from '../../../assets/c-icon.png';
+import cppIcon from '../../../assets/cpp-icon.jpg';
+import rustIcon from '../../../assets/rust-icon.jpg';
 
 interface CodeFile {
   id: string;
@@ -11,7 +14,7 @@ interface CodeFile {
   isLocked: boolean;
   isAnswerFile: boolean;
   isHidden: boolean;
-  language: 'c' | 'cpp';
+  language: 'c' | 'cpp' | 'rust';
 }
 
 interface TestCase {
@@ -34,10 +37,17 @@ const MAX_IMAGES = 5;
 
 type Difficulty = 'Easy' | 'Medium' | 'Hard';
 
-const createCodeFile = (index: number, language: 'c' | 'cpp', filename?: string, isHeaderFile?: boolean): CodeFile => {
+const createCodeFile = (
+  index: number,
+  language: 'c' | 'cpp' | 'rust',
+  filename?: string,
+  isHeaderFile?: boolean
+): CodeFile => {
   let content = '';
   
-  if (isHeaderFile && filename) {
+  if (language === 'rust') {
+    content = `fn main() {\n    // Your code here\n}\n`;
+  } else if (isHeaderFile && filename) {
     // Generate header guard from filename
     const guardName = filename
       .toUpperCase()
@@ -75,7 +85,7 @@ const PracticalQuestionCreator: React.FC = () => {
   const [isPreviousExam, setIsPreviousExam] = useState(false);
   const [examSchoolYear, setExamSchoolYear] = useState('');
   const [examSemester, setExamSemester] = useState('');
-  const [defaultLanguage, setDefaultLanguage] = useState<'c' | 'cpp' | null>(null);
+  const [defaultLanguage, setDefaultLanguage] = useState<'c' | 'cpp' | 'rust' | null>(null);
   const [files, setFiles] = useState<CodeFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string>('');
   const [testCases, setTestCases] = useState<TestCase[]>([]);
@@ -258,7 +268,11 @@ const PracticalQuestionCreator: React.FC = () => {
     }
   };
 
-  const handleLanguageSelect = (lang: 'c' | 'cpp') => {
+  const handleLanguageSelect = (lang: 'c' | 'cpp' | 'rust') => {
+    // Reset files when switching language to avoid mixed-language sets
+    setFiles([]);
+    setActiveFileId('');
+    setIsHeaderFile(false);
     setDefaultLanguage(lang);
     setShowLanguageModal(false);
   };
@@ -276,15 +290,25 @@ const PracticalQuestionCreator: React.FC = () => {
     let filename = newFileName.trim();
     
     if (isHeaderFile) {
+      if (defaultLanguage === 'rust') {
+        setFileNameError('Headers are not supported for Rust.');
+        return;
+      }
       // Ensure it ends with .h
       if (!filename.endsWith('.h')) {
         filename += '.h';
       }
     } else {
       // Auto-add file extension based on language
-      const extension = defaultLanguage === 'c' ? '.c' : '.cpp';
-      if (!filename.endsWith('.c') && !filename.endsWith('.cpp')) {
-        filename += extension;
+      if (defaultLanguage === 'rust') {
+        if (!filename.endsWith('.rs')) {
+          filename += '.rs';
+        }
+      } else {
+        const extension = defaultLanguage === 'c' ? '.c' : '.cpp';
+        if (!filename.endsWith('.c') && !filename.endsWith('.cpp')) {
+          filename += extension;
+        }
       }
     }
     
@@ -831,8 +855,15 @@ const PracticalQuestionCreator: React.FC = () => {
     const allTestCasesValid = testCases.every(
       (tc) => tc.expectedOutput.trim().length > 0
     );
-    return allTestCasesValid;
-  }, [title, description, section, lesson, author, files, testCases]);
+
+    // Ensure files match selected language and extensions
+    const allLanguagesValid = files.every((f) => {
+      if (defaultLanguage === 'rust') return f.language === 'rust' && f.filename.endsWith('.rs');
+      return f.language === defaultLanguage && (f.filename.endsWith('.c') || f.filename.endsWith('.cpp') || f.filename.endsWith('.h') || f.filename.endsWith('.hpp'));
+    });
+
+    return allTestCasesValid && allLanguagesValid;
+  }, [title, description, section, lesson, author, files, testCases, defaultLanguage]);
 
   // Run all test cases and collect execution metrics
   const runAllTestCasesForMetrics = async (): Promise<TestCase[]> => {
@@ -933,15 +964,16 @@ const PracticalQuestionCreator: React.FC = () => {
     setSubmitError(null);
 
     try {
-      // Try to run all test cases through the judge to get execution metrics
-      // If this fails or times out, we'll proceed without metrics
+      // Try to run all test cases through the judge to get execution metrics (skip for Rust)
       let testCasesWithMetrics = testCases;
-      try {
-        testCasesWithMetrics = await runAllTestCasesForMetrics();
-        console.log('[Metrics] Successfully collected metrics');
-      } catch (metricsError) {
-        console.warn('[Metrics] Failed to collect metrics, proceeding without them:', metricsError);
-        // Continue with original test cases without metrics
+      if (defaultLanguage !== 'rust') {
+        try {
+          testCasesWithMetrics = await runAllTestCasesForMetrics();
+          console.log('[Metrics] Successfully collected metrics');
+        } catch (metricsError) {
+          console.warn('[Metrics] Failed to collect metrics, proceeding without them:', metricsError);
+          // Continue with original test cases without metrics
+        }
       }
 
       const payload = {
@@ -2093,23 +2125,8 @@ const PracticalQuestionCreator: React.FC = () => {
                 className="group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 p-6 text-left transition hover:border-blue-500 hover:bg-neutral-750 cursor-pointer"
               >
                 <div className="flex flex-col items-center gap-3">
-                  <div className="rounded-full bg-blue-500/10 p-3 group-hover:bg-blue-500/20 transition">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-8 w-8 text-blue-400"
-                    >
-                      <path d="M3 3h18v18H3z" />
-                      <path d="M7 7h4v4H7z" />
-                      <path d="M7 13h4v4H7z" />
-                      <path d="M13 7h4v4h-4z" />
-                      <path d="M13 13h4v4h-4z" />
-                    </svg>
+                  <div className="rounded-full bg-blue-600/15 p-3 group-hover:bg-blue-600/25 transition">
+                    <img src={cIcon} alt="C" className="h-10 w-10 object-contain" />
                   </div>
                   <div>
                     <div className="text-lg font-semibold">C</div>
@@ -2123,29 +2140,27 @@ const PracticalQuestionCreator: React.FC = () => {
                 className="group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 p-6 text-left transition hover:border-purple-500 hover:bg-neutral-750 cursor-pointer"
               >
                 <div className="flex flex-col items-center gap-3">
-                  <div className="rounded-full bg-purple-500/10 p-3 group-hover:bg-purple-500/20 transition">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className="h-8 w-8 text-purple-400"
-                    >
-                      <path d="M3 3h18v18H3z" />
-                      <path d="M7 7h4v4H7z" />
-                      <path d="M7 13h4v4H7z" />
-                      <path d="M13 7h4v4h-4z" />
-                      <path d="M13 13h4v4h-4z" />
-                      <path d="M15 9h2" />
-                      <path d="M15 15h2" />
-                    </svg>
+                  <div className="rounded-full bg-purple-500/15 p-3 group-hover:bg-purple-500/25 transition">
+                    <img src={cppIcon} alt="C++" className="h-10 w-10 object-contain rounded" />
                   </div>
                   <div>
                     <div className="text-lg font-semibold">C++</div>
                     <div className="text-xs text-neutral-400">C++ Programming</div>
+                  </div>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleLanguageSelect('rust')}
+                className="group relative overflow-hidden rounded-lg border border-neutral-700 bg-neutral-800 p-6 text-left transition hover:border-amber-500 hover:bg-neutral-750 cursor-pointer"
+              >
+                <div className="flex flex-col items-center gap-3">
+                  <div className="rounded-full bg-amber-500/15 p-3 group-hover:bg-amber-500/25 transition">
+                    <img src={rustIcon} alt="Rust" className="h-10 w-10 object-contain rounded" />
+                  </div>
+                  <div>
+                    <div className="text-lg font-semibold">Rust</div>
+                    <div className="text-xs text-neutral-400">Rust Programming</div>
                   </div>
                 </div>
               </button>
@@ -2201,43 +2216,47 @@ const PracticalQuestionCreator: React.FC = () => {
                       </div>
                       <div>
                         <div className="font-semibold text-sm">Source File</div>
-                        <div className="text-xs text-neutral-400">.c / .cpp</div>
+                        <div className="text-xs text-neutral-400">
+                          {defaultLanguage === 'rust' ? '.rs' : '.c / .cpp'}
+                        </div>
                       </div>
                     </div>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsHeaderFile(true)}
-                    className={`rounded-lg border p-4 text-left transition cursor-pointer ${
-                      isHeaderFile
-                        ? 'border-green-500 bg-green-500/10 text-white'
-                        : 'border-neutral-700 bg-neutral-800 text-neutral-300 hover:border-neutral-600'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`rounded-full p-2 ${isHeaderFile ? 'bg-green-500/20' : 'bg-neutral-700'}`}>
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-5 w-5"
-                        >
-                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                          <polyline points="14 2 14 8 20 8" />
-                          <path d="M12 11v6" />
-                          <path d="M9 14h6" />
-                        </svg>
+                  {defaultLanguage !== 'rust' && (
+                    <button
+                      type="button"
+                      onClick={() => setIsHeaderFile(true)}
+                      className={`rounded-lg border p-4 text-left transition cursor-pointer ${
+                        isHeaderFile
+                          ? 'border-green-500 bg-green-500/10 text-white'
+                          : 'border-neutral-700 bg-neutral-800 text-neutral-300 hover:border-neutral-600'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`rounded-full p-2 ${isHeaderFile ? 'bg-green-500/20' : 'bg-neutral-700'}`}>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-5 w-5"
+                          >
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                            <path d="M12 11v6" />
+                            <path d="M9 14h6" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="font-semibold text-sm">Header File</div>
+                          <div className="text-xs text-neutral-400">.h</div>
+                        </div>
                       </div>
-                      <div>
-                        <div className="font-semibold text-sm">Header File</div>
-                        <div className="text-xs text-neutral-400">.h</div>
-                      </div>
-                    </div>
-                  </button>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -2259,12 +2278,17 @@ const PracticalQuestionCreator: React.FC = () => {
                     }
                   }}
                 />
-                {isHeaderFile && newFileName && !newFileName.endsWith('.h') && (
+                {isHeaderFile && defaultLanguage !== 'rust' && newFileName && !newFileName.endsWith('.h') && (
                   <p className="mt-1 text-xs text-amber-400">
                     ".h" extension will be added automatically
                   </p>
                 )}
-                {!isHeaderFile && newFileName && !newFileName.endsWith('.c') && !newFileName.endsWith('.cpp') && (
+                {!isHeaderFile && newFileName && defaultLanguage === 'rust' && !newFileName.endsWith('.rs') && (
+                  <p className="mt-1 text-xs text-amber-400">
+                    ".rs" extension will be added automatically
+                  </p>
+                )}
+                {!isHeaderFile && newFileName && defaultLanguage !== 'rust' && !newFileName.endsWith('.c') && !newFileName.endsWith('.cpp') && (
                   <p className="mt-1 text-xs text-amber-400">
                     "{defaultLanguage === 'c' ? '.c' : '.cpp'}" extension will be added automatically
                   </p>

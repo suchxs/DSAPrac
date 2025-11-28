@@ -46,6 +46,7 @@ export interface ElectronAPI {
   recordPracticalSubmission: (payload: { questionId: string; files: { filename: string; content: string }[]; testResults: any[]; score: number; maxScore: number }) => Promise<any>;
   setPracticalIteration: (payload: { questionId: string; files: { filename: string; content: string }[] }) => Promise<any>;
   clearPracticalIteration: (payload: { questionId: string }) => Promise<any>;
+  openCompareOutput: (payload: { expected: string; actual: string; label?: string }) => Promise<any>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -176,7 +177,7 @@ export interface CodeFilePayload {
   isLocked: boolean; // If true, students cannot edit this file
   isAnswerFile: boolean; // If true, this file will be cleared in exam mode (keeps only comment)
   isHidden: boolean; // If true, this file is hidden from students but visible in library
-  language: 'c' | 'cpp';
+  language: 'c' | 'cpp' | 'rust';
 }
 
 export interface CreatePracticalQuestionPayload {

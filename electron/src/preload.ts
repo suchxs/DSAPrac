@@ -280,6 +280,7 @@ export interface ElectronAPI {
   recordPracticalSubmission: (payload: { questionId: string; files: { filename: string; content: string }[]; testResults: any[]; score: number; maxScore: number }) => Promise<any>;
   setPracticalIteration: (payload: { questionId: string; files: { filename: string; content: string }[] }) => Promise<any>;
   clearPracticalIteration: (payload: { questionId: string }) => Promise<any>;
+  openCompareOutput: (payload: { expected: string; actual: string; label?: string }) => Promise<any>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
@@ -374,6 +375,8 @@ const api: ElectronAPI = {
     ipcRenderer.invoke('practical:setIteration', payload),
   clearPracticalIteration: (payload: { questionId: string }) =>
     ipcRenderer.invoke('practical:clearIteration', payload),
+  openCompareOutput: (payload: { expected: string; actual: string; label?: string }) =>
+    ipcRenderer.invoke('practical:openCompareOutput', payload),
   // Window controls
   windowMinimize: () => ipcRenderer.send('window-minimize'),
   windowMaximize: () => ipcRenderer.send('window-maximize'),

@@ -134,7 +134,7 @@ type CodeFilePayload = {
   isLocked: boolean;
   isAnswerFile: boolean;
   isHidden: boolean;
-  language: 'c' | 'cpp';
+  language: 'c' | 'cpp' | 'rust';
 };
 
 type CreatePracticalQuestionPayload = {
@@ -2050,7 +2050,7 @@ app.whenReady().then(() => {
                   isLocked: !!f.is_locked,
                   isAnswerFile: !!f.is_answer_file,
                   isHidden: !!f.is_hidden,
-                  language: (f.language === 'c' || f.language === 'cpp') ? f.language : 'c',
+                  language: (f.language === 'c' || f.language === 'cpp' || f.language === 'rust') ? f.language : 'c',
                 }))
               : [];
 
@@ -2666,12 +2666,12 @@ app.whenReady().then(() => {
       // Determine the language first (assume all files use the same language)
       const language = files[0].language;
       
-      // Prepare files for Rust backend, injecting unbuffering code
+      // Prepare files for Rust backend, injecting unbuffering code (C/C++ only)
       const preparedFiles = files.map(file => {
         let content = file.content;
         
         // Inject unbuffering code into files with main function
-        if (file.filename.toLowerCase().includes('main') || files.length === 1) {
+        if ((language === 'c' || language === 'cpp') && (file.filename.toLowerCase().includes('main') || files.length === 1)) {
           console.log('[Terminal] Injecting unbuffer code into', file.filename);
           // For C/C++ files, inject setvbuf calls at the start of main
           content = content.replace(
@@ -2704,7 +2704,7 @@ app.whenReady().then(() => {
       
       const compileStart = Date.now();
       const compileResult = await sendBackendCommand<CompileResult>('execute', {
-        language: language === 'cpp' ? 'cpp' : 'c',
+        language: language === 'cpp' ? 'cpp' : language === 'rust' ? 'rust' : 'c',
         files: preparedFiles,
       }, 30000); // 30 second timeout
       
@@ -3022,7 +3022,7 @@ app.whenReady().then(() => {
                         isLocked: !!f.is_locked,
                         isAnswerFile: !!f.is_answer_file,
                         isHidden: !!f.is_hidden,
-                        language: f.language === 'cpp' ? 'cpp' : 'c',
+                        language: f.language === 'cpp' ? 'cpp' : f.language === 'rust' ? 'rust' : 'c',
                       }))
                     : [];
 
@@ -3323,12 +3323,14 @@ app.whenReady().then(() => {
         const executablePath = path.join(tempDir, executableName);
 
         // Compile the code
-        const compiler = language === 'cpp' ? 'g++' : 'gcc';
+        const compiler = language === 'cpp' ? 'g++' : language === 'rust' ? 'rustc' : 'gcc';
         const sourceFiles = payload.files
           .filter(f => !f.filename.match(/\.(h|hpp)$/i))
           .map(f => f.filename);
 
-        const compileArgs = [...sourceFiles, '-o', executableName];
+        const compileArgs = language === 'rust'
+          ? [...sourceFiles, '-O', '-o', executableName]
+          : [...sourceFiles, '-o', executableName];
 
         const compileResult = await new Promise<{ success: boolean; error?: string }>((resolve) => {
           const compileProcess = spawn(compiler, compileArgs, { cwd: tempDir });
@@ -3422,27 +3424,120 @@ app.whenReady().then(() => {
     return { success: true };
   });
 
+  ipcMain.handle('practical:openCompareOutput', async (_event, payload: { expected: string; actual: string; label?: string }) => {
+    const expected = payload.expected ?? '';
+    const actual = payload.actual ?? '';
+    const label = payload.label ?? 'Test Case';
+
+    const escapeHtml = (s: string) =>
+      s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Compare Output</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: #0b0b0b; color: #e5e5e5; font-family: 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; }
+    h1 { font-size: 16px; margin: 0 0 12px; color: #fff; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .panel { border: 1px solid #222; border-radius: 8px; background: #121212; padding: 10px; overflow: auto; max-height: 70vh; }
+    .label { font-size: 11px; color: #9ca3af; margin-bottom: 6px; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; }
+    .diff-expected { background: rgba(16, 185, 129, 0.25); color: #c3f0d2; }
+    .diff-actual { background: rgba(248, 113, 113, 0.25); color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(label)} &mdash; Compare Output</h1>
+  <div class="grid">
+    <div class="panel">
+      <div class="label">Expected</div>
+      <pre id="expected"></pre>
+    </div>
+    <div class="panel">
+      <div class="label">Your Output</div>
+      <pre id="actual"></pre>
+    </div>
+  </div>
+  <script>
+    const data = ${JSON.stringify({ expected, actual })};
+    const esc = (s) => s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const highlight = (a, b) => {
+      const max = Math.max(a.length, b.length);
+      let ha = '', hb = '';
+      for (let i = 0; i < max; i++) {
+        const ca = a[i];
+        const cb = b[i];
+        if (ca === cb) {
+          if (ca !== undefined) ha += esc(ca);
+          if (cb !== undefined) hb += esc(cb);
+        } else {
+          if (ca !== undefined) ha += '<span class="diff-expected">' + esc(ca) + '</span>';
+          if (cb !== undefined) hb += '<span class="diff-actual">' + esc(cb) + '</span>';
+        }
+      }
+      return { ha, hb };
+    };
+
+    const res = highlight(data.expected, data.actual);
+    document.getElementById('expected').innerHTML = res.ha || '<span style="color:#6b7280">[empty]</span>';
+    document.getElementById('actual').innerHTML = res.hb || '<span style="color:#6b7280">[empty]</span>';
+  </script>
+</body>
+</html>`;
+
+    const compareWin = new BrowserWindow({
+      width: 900,
+      height: 650,
+      title: 'Compare Output',
+      autoHideMenuBar: true,
+      show: true,
+      backgroundColor: '#0b0b0b',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    compareWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    return { success: true };
+  });
+
   ipcMain.handle('submit-practical-solution', async (_event, payload: { questionId: string; files: any[]; testCases: any[] }) => {
     try {
-      const language = payload.files[0]?.language === 'cpp' ? 'cpp' : 'c';
+      const language = payload.files[0]?.language === 'cpp' ? 'cpp' : payload.files[0]?.language === 'rust' ? 'rust' : 'c';
 
-      // Prepare files similar to terminal execution (unbuffer stdout/stderr/stdin)
-      const preparedFiles = payload.files.map((file: any) => {
-        let content = file.content;
-        if (file.filename.toLowerCase().includes('main') || payload.files.length === 1) {
-          content = content.replace(
-            /int\s+main\s*\([^)]*\)\s*\{/,
-            (match: string) => {
-              const unbufferSnippet =
-                language === 'c'
-                  ? '\n    setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); setvbuf(stdin, NULL, _IONBF, 0);'
-                  : '\n    std::setvbuf(stdout, NULL, _IONBF, 0); std::setvbuf(stderr, NULL, _IONBF, 0); std::setvbuf(stdin, NULL, _IONBF, 0);';
-              return match + unbufferSnippet;
-            }
-          );
-        }
-        return { filename: file.filename, content };
-      });
+        // Prepare files similar to terminal execution (unbuffer stdout/stderr/stdin)
+        const preparedFiles = payload.files.map((file: any) => {
+          let content = file.content;
+          if ((language === 'c' || language === 'cpp') && (file.filename.toLowerCase().includes('main') || payload.files.length === 1)) {
+            content = content.replace(
+              /int\s+main\s*\([^)]*\)\s*\{/,
+              (match: string) => {
+                const unbufferSnippet =
+                  language === 'c'
+                    ? '\n    setvbuf(stdout, NULL, _IONBF, 0); setvbuf(stderr, NULL, _IONBF, 0); setvbuf(stdin, NULL, _IONBF, 0);'
+                    : '\n    std::setvbuf(stdout, NULL, _IONBF, 0); std::setvbuf(stderr, NULL, _IONBF, 0); std::setvbuf(stdin, NULL, _IONBF, 0);';
+                return match + unbufferSnippet;
+              }
+            );
+          }
+          return { filename: file.filename, content };
+        });
 
       interface CompileResult {
         success: boolean;
