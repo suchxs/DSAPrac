@@ -73,6 +73,8 @@ type CreateTheoreticalQuestionPayload = {
   lesson: string;
   author: string;
   choices: ChoicePayload[];
+  questionType?: 'mcq' | 'identification';
+  identificationAnswers?: string[];
   image?: ImagePayload | null;  // Legacy single image support
   images?: ImagePayload[];      // New multiple images support
   isPreviousExam?: boolean;
@@ -92,6 +94,8 @@ type TheoreticalQuestionRecord = {
   author?: string;
   choices: ListedChoice[];
   correctCount: number;
+  questionType?: 'mcq' | 'identification';
+  identificationAnswers?: string[];
   imageDataUrl?: string | null;   // Legacy single image
   imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
@@ -109,6 +113,8 @@ type UpdateTheoreticalQuestionPayload = {
   question: string;
   author?: string;
   choices: ChoicePayload[];
+  questionType?: 'mcq' | 'identification';
+  identificationAnswers?: string[];
   image?: ImagePayload | null;    // Legacy single image support
   images?: ImagePayload[];        // New multiple images support
   isPreviousExam?: boolean;
@@ -231,7 +237,7 @@ const SECTION_DEFINITIONS: Record<string, { label: string; lessons: string[] }> 
   },
 };
 
-const THEORY_MIN_CHOICES = 6;
+const THEORY_MIN_CHOICES = 4;
 const THEORY_MAX_CHOICES = 10;
 
 function getUserDataDir(): string {
@@ -749,6 +755,25 @@ function parseTheoreticalQuestionFile(filePath: string): {
       continue;
     }
 
+    if (trimmed.startsWith('identification_answers:')) {
+      const answers: string[] = [];
+      let j = idx + 1;
+      while (j < lines.length) {
+        const l = lines[j].trim();
+        if (!l) { j += 1; continue; }
+        if (l.startsWith('-')) {
+          const m = l.match(/-\s*(.*)/);
+          if (m) answers.push(m[1]);
+          j += 1;
+          continue;
+        }
+        break;
+      }
+      meta.identification_answers = answers;
+      idx = j;
+      continue;
+    }
+
     if (trimmed.startsWith('images:')) {
       // Check if there's a value on the same line (inline array not supported, but handle empty)
       const valuePart = trimmed.slice(7).trim(); // 7 = 'images:'.length
@@ -1223,30 +1248,42 @@ app.whenReady().then(() => {
       throw new Error('Selected lesson does not belong to the chosen section.');
     }
 
-    if (!Array.isArray(choices)) {
-      throw new Error('Choices payload is invalid.');
-    }
-
-    if (choices.length < THEORY_MIN_CHOICES || choices.length > THEORY_MAX_CHOICES) {
-      throw new Error(
-        `Choices must be between ${THEORY_MIN_CHOICES} and ${THEORY_MAX_CHOICES}.`
-      );
-    }
-
-    const normalizedChoices = choices.map((choice, index) => {
-      if (!choice || typeof choice.text !== 'string') {
-        throw new Error(`Choice #${index + 1} is invalid.`);
+    const questionType = payload.questionType === 'identification' ? 'identification' : 'mcq';
+    let normalizedChoices: ChoicePayload[] = [];
+    let correctCount = 0;
+    if (questionType === 'mcq') {
+      if (!Array.isArray(choices)) {
+        throw new Error('Choices payload is invalid.');
       }
-      const text = choice.text.trim();
-      if (!text) {
-        throw new Error(`Choice #${index + 1} must have text.`);
+  
+      if (choices.length < THEORY_MIN_CHOICES || choices.length > THEORY_MAX_CHOICES) {
+        throw new Error(
+          `Choices must be between ${THEORY_MIN_CHOICES} and ${THEORY_MAX_CHOICES}.`
+        );
       }
-      return { text, isCorrect: !!choice.isCorrect };
-    });
-
-    const correctCount = normalizedChoices.filter((choice) => choice.isCorrect).length;
-    if (correctCount === 0) {
-      throw new Error('At least one correct answer is required.');
+  
+      normalizedChoices = choices.map((choice, index) => {
+        if (!choice || typeof choice.text !== 'string') {
+          throw new Error(`Choice #${index + 1} is invalid.`);
+        }
+        const text = choice.text.trim();
+        if (!text) {
+          throw new Error(`Choice #${index + 1} must have text.`);
+        }
+        return { text, isCorrect: !!choice.isCorrect };
+      });
+  
+      correctCount = normalizedChoices.filter((choice) => choice.isCorrect).length;
+      if (correctCount === 0) {
+        throw new Error('At least one correct answer is required.');
+      }
+    } else {
+      const answers = Array.isArray(payload.identificationAnswers) ? payload.identificationAnswers.map(a => (typeof a === 'string' ? a.trim() : '')).filter(Boolean) : [];
+      if (answers.length === 0) {
+        throw new Error('At least one identification answer is required.');
+      }
+      normalizedChoices = [];
+      correctCount = answers.length;
     }
 
     const createdAt = new Date().toISOString();
@@ -1324,11 +1361,19 @@ app.whenReady().then(() => {
         }
       }
 
-      frontmatterLines.push('choices:');
-      normalizedChoices.forEach((choice) => {
-        frontmatterLines.push(`  - text: ${JSON.stringify(choice.text)}`);
-        frontmatterLines.push(`    correct: ${choice.isCorrect ? 'true' : 'false'}`);
-      });
+      frontmatterLines.push(`question_type: ${payload.questionType === 'identification' ? 'identification' : 'mcq'}`);
+      if (payload.questionType === 'identification') {
+        frontmatterLines.push('identification_answers:');
+        (payload.identificationAnswers || []).forEach((ans) => {
+          frontmatterLines.push(`  - ${ans.replace(/"/g, '\\"')}`);
+        });
+      } else {
+        frontmatterLines.push('choices:');
+        normalizedChoices.forEach((choice) => {
+          frontmatterLines.push(`  - text: ${JSON.stringify(choice.text)}`);
+          frontmatterLines.push(`    correct: ${choice.isCorrect ? 'true' : 'false'}`);
+        });
+      }
       frontmatterLines.push('---', '', sanitizedQuestion, '');
 
       fs.writeFileSync(markdownPath, frontmatterLines.join('\n'), 'utf-8');
@@ -1407,10 +1452,21 @@ app.whenReady().then(() => {
             const choices = Array.isArray(meta.choices)
               ? (meta.choices as ListedChoice[])
               : [];
+            const identificationAnswers = Array.isArray((meta as any).identification_answers)
+              ? ((meta as any).identification_answers as string[])
+                  .map((a) => (typeof a === 'string' ? a.trim() : ''))
+                  .filter(Boolean)
+              : [];
+            const questionType =
+              meta.question_type === 'identification'
+                ? 'identification'
+                : 'mcq';
             const correctCount =
               typeof meta.correct_count === 'number'
                 ? (meta.correct_count as number)
-                : choices.filter((choice) => choice.isCorrect).length;
+                : questionType === 'mcq'
+                ? choices.filter((choice) => choice.isCorrect).length
+                : identificationAnswers.length;
 
             let imageDataUrl: string | undefined;
             let imageDataUrls: string[] | undefined;
@@ -1472,6 +1528,8 @@ app.whenReady().then(() => {
               author,
               choices,
               correctCount,
+              questionType,
+              identificationAnswers,
               imageDataUrl,
               imageDataUrls,
               createdAt,
@@ -1512,30 +1570,43 @@ app.whenReady().then(() => {
       throw new Error('Question text is required.');
     }
 
-    if (!Array.isArray(payload.choices)) {
-      throw new Error('Choices payload is invalid.');
-    }
+  if (!Array.isArray(payload.choices)) {
+    throw new Error('Choices payload is invalid.');
+  }
 
-    if (payload.choices.length < THEORY_MIN_CHOICES || payload.choices.length > THEORY_MAX_CHOICES) {
-      throw new Error(
-        `Choices must be between ${THEORY_MIN_CHOICES} and ${THEORY_MAX_CHOICES}.`
-      );
-    }
-
-    const normalizedChoices = payload.choices.map((choice, index) => {
-      if (!choice || typeof choice.text !== 'string') {
-        throw new Error(`Choice #${index + 1} is invalid.`);
+    const questionTypeUpdate = payload.questionType === 'identification' ? 'identification' : 'mcq';
+    let normalizedChoices: ChoicePayload[] = [];
+    let correctCount = 0;
+    if (questionTypeUpdate === 'mcq') {
+      if (payload.choices.length < THEORY_MIN_CHOICES || payload.choices.length > THEORY_MAX_CHOICES) {
+        throw new Error(
+          `Choices must be between ${THEORY_MIN_CHOICES} and ${THEORY_MAX_CHOICES}.`
+        );
       }
-      const text = choice.text.trim();
-      if (!text) {
-        throw new Error(`Choice #${index + 1} must have text.`);
+      normalizedChoices = payload.choices.map((choice, index) => {
+        if (!choice || typeof choice.text !== 'string') {
+          throw new Error(`Choice #${index + 1} is invalid.`);
+        }
+        const text = choice.text.trim();
+        if (!text) {
+          throw new Error(`Choice #${index + 1} must have text.`);
+        }
+        return { text, isCorrect: !!choice.isCorrect };
+      });
+  
+      correctCount = normalizedChoices.filter((choice) => choice.isCorrect).length;
+      if (correctCount === 0) {
+        throw new Error('At least one correct answer is required.');
       }
-      return { text, isCorrect: !!choice.isCorrect };
-    });
-
-    const correctCount = normalizedChoices.filter((choice) => choice.isCorrect).length;
-    if (correctCount === 0) {
-      throw new Error('At least one correct answer is required.');
+    } else {
+      const answers = Array.isArray(payload.identificationAnswers)
+        ? payload.identificationAnswers.map((a) => (typeof a === 'string' ? a.trim() : '')).filter(Boolean)
+        : [];
+      if (answers.length === 0) {
+        throw new Error('At least one identification answer is required.');
+      }
+      normalizedChoices = [];
+      correctCount = answers.length;
     }
 
     const baseDir = path.resolve(getTheoryBaseDir());
@@ -1682,13 +1753,14 @@ app.whenReady().then(() => {
           '---',
           `id: ${payload.id}`,
           `section: "${sectionDef.label}"`,
-          `lesson: "${payload.lesson}"`,
-          `author: "${author}"`,
-          `created_at: "${originalCreatedAt}"`,
-          `updated_at: "${nowIso}"`,
-          `choice_count: ${normalizedChoices.length}`,
-          `correct_count: ${correctCount}`,
-        ];
+        `lesson: "${payload.lesson}"`,
+        `author: "${author}"`,
+        `created_at: "${originalCreatedAt}"`,
+        `updated_at: "${nowIso}"`,
+        `choice_count: ${normalizedChoices.length}`,
+        `correct_count: ${correctCount}`,
+        `question_type: ${questionTypeUpdate}`,
+      ];
 
       if (newImageFileNames.length === 1) {
         // Single image - use legacy format for backward compatibility
@@ -1707,16 +1779,24 @@ app.whenReady().then(() => {
         if (payload.examSchoolYear?.trim()) {
           frontmatterLines.push(`exam_school_year: "${payload.examSchoolYear.trim()}"`);
         }
-        if (payload.examSemester?.trim()) {
-          frontmatterLines.push(`exam_semester: "${payload.examSemester.trim()}"`);
-        }
+      if (payload.examSemester?.trim()) {
+        frontmatterLines.push(`exam_semester: "${payload.examSemester.trim()}"`);
       }
+    }
 
-      frontmatterLines.push('choices:');
-      normalizedChoices.forEach((choice) => {
-        frontmatterLines.push(`  - text: ${JSON.stringify(choice.text)}`);
-        frontmatterLines.push(`    correct: ${choice.isCorrect ? 'true' : 'false'}`);
-      });
+      frontmatterLines.push(`question_type: ${payload.questionType === 'identification' ? 'identification' : 'mcq'}`);
+      if (payload.questionType === 'identification') {
+        frontmatterLines.push('identification_answers:');
+        (payload.identificationAnswers || []).forEach((ans) => {
+          frontmatterLines.push(`  - ${ans.replace(/"/g, '\\"')}`);
+        });
+      } else {
+        frontmatterLines.push('choices:');
+        normalizedChoices.forEach((choice) => {
+          frontmatterLines.push(`  - text: ${JSON.stringify(choice.text)}`);
+          frontmatterLines.push(`    correct: ${choice.isCorrect ? 'true' : 'false'}`);
+        });
+      }
       frontmatterLines.push('---', '', sanitizedQuestion, '');
 
       fs.writeFileSync(destPath, frontmatterLines.join('\n'), 'utf-8');

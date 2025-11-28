@@ -1,4 +1,6 @@
 ﻿import React, { useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useNavigate } from "react-router-dom";
 import { SECTION_OPTIONS } from "../constants/theorySections";
 import type {
@@ -36,6 +38,8 @@ interface EditModalState {
   lesson: string;
   question: string;
   author: string;
+  questionType: "mcq" | "identification";
+  identificationAnswers: string[];
   isPreviousExam: boolean;
   examSchoolYear: string;
   examSemester: string;
@@ -59,7 +63,7 @@ interface FeedbackState {
   message: string;
 }
 
-const MIN_CHOICES = 6;
+const MIN_CHOICES = 4;
 const MAX_CHOICES = 10;
 const MAX_EDIT_IMAGES = 5;
 
@@ -154,12 +158,19 @@ const TheoreticalQuestionLibrary: React.FC = () => {
   };
 
   const handleOpenEdit = (record: TheoreticalQuestionRecord) => {
+    const questionType = record.questionType === "identification" ? "identification" : "mcq";
     const editableChoices =
       record.choices.length > 0
         ? record.choices.map((choice, index) =>
             createEditableChoice(choice.text, choice.isCorrect, index)
           )
         : Array.from({ length: MIN_CHOICES }, () => createBlankChoice());
+    const identificationAnswers =
+      questionType === "identification"
+        ? record.identificationAnswers && record.identificationAnswers.length > 0
+          ? record.identificationAnswers
+          : [""]
+        : [];
 
     // Convert imageDataUrls array to EditImageItem array
     const existingImages: EditImageItem[] = (record.imageDataUrls ?? []).map((url, index) => ({
@@ -173,10 +184,12 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       sectionKey: record.sectionKey,
       lesson: record.lesson,
       question: record.question,
-      author: record.author ?? '',
+      author: record.author ?? "",
+      questionType,
+      identificationAnswers,
       isPreviousExam: record.isPreviousExam ?? false,
-      examSchoolYear: record.examSchoolYear ?? '',
-      examSemester: record.examSemester ?? '',
+      examSchoolYear: record.examSchoolYear ?? "",
+      examSemester: record.examSemester ?? "",
       choices: editableChoices,
       images: existingImages,
       imageDirty: false,
@@ -205,6 +218,30 @@ const TheoreticalQuestionLibrary: React.FC = () => {
         ...prev,
         sectionKey,
         lesson: nextLesson,
+      };
+    });
+  };
+
+  const handleEditQuestionTypeChange = (type: "mcq" | "identification") => {
+    setEditState((prev) => {
+      if (!prev || prev.questionType === type) return prev;
+
+      if (type === "mcq") {
+        const nextChoices =
+          prev.choices.length > 0 ? prev.choices : Array.from({ length: MIN_CHOICES }, () => createBlankChoice());
+        return {
+          ...prev,
+          questionType: "mcq",
+          choices: nextChoices,
+          // Keep identification answers so they can be restored if the user switches back before saving
+          identificationAnswers: prev.identificationAnswers.length > 0 ? prev.identificationAnswers : [""],
+        };
+      }
+
+      return {
+        ...prev,
+        questionType: "identification",
+        identificationAnswers: prev.identificationAnswers.length > 0 ? prev.identificationAnswers : [""],
       };
     });
   };
@@ -287,10 +324,16 @@ const TheoreticalQuestionLibrary: React.FC = () => {
   };
 
   const editCorrectCount = editState
-    ? editState.choices.reduce((count, choice) => (choice.isCorrect ? count + 1 : count), 0)
+    ? editState.questionType === "mcq"
+      ? editState.choices.reduce((count, choice) => (choice.isCorrect ? count + 1 : count), 0)
+      : editState.identificationAnswers.filter((a) => a.trim().length > 0).length
     : 0;
 
-  const editChoicesMetRequirement = editState ? editState.choices.length >= MIN_CHOICES : false;
+  const editChoicesMetRequirement = editState
+    ? editState.questionType === "mcq"
+      ? editState.choices.length >= MIN_CHOICES
+      : editState.identificationAnswers.some((a) => a.trim().length > 0)
+    : false;
 
   const isEditValid =
     !!editState &&
@@ -298,9 +341,11 @@ const TheoreticalQuestionLibrary: React.FC = () => {
     !!editState.lesson &&
     editState.author.trim().length > 0 &&
     editState.question.trim().length > 0 &&
-    editState.choices.length >= MIN_CHOICES &&
-    editState.choices.every((choice) => choice.text.trim().length > 0) &&
-    editCorrectCount > 0;
+    (editState.questionType === "mcq"
+      ? editState.choices.length >= MIN_CHOICES &&
+        editState.choices.every((choice) => choice.text.trim().length > 0) &&
+        editCorrectCount > 0
+      : editState.identificationAnswers.some((a) => a.trim().length > 0));
 
   const handleEditImageButton = () => {
     editFileInputRef.current?.click();
@@ -376,6 +421,29 @@ const TheoreticalQuestionLibrary: React.FC = () => {
     event.target.value = "";
   };
 
+  const handleAddIdentificationAnswerEdit = () => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      return { ...prev, identificationAnswers: [...prev.identificationAnswers, ""] };
+    });
+  };
+
+  const handleIdentificationChangeEdit = (idx: number, value: string) => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      const next = prev.identificationAnswers.map((a, i) => (i === idx ? value : a));
+      return { ...prev, identificationAnswers: next };
+    });
+  };
+
+  const handleRemoveIdentificationEdit = (idx: number) => {
+    setEditState((prev) => {
+      if (!prev) return prev;
+      const next = prev.identificationAnswers.filter((_, i) => i !== idx);
+      return { ...prev, identificationAnswers: next.length > 0 ? next : [""] };
+    });
+  };
+
   const handleRemoveEditImage = (imageId: string) => {
     setEditState((prev) =>
       prev
@@ -419,10 +487,18 @@ const TheoreticalQuestionLibrary: React.FC = () => {
       lesson: editState.lesson,
       question: editState.question.replace(/\r\n/g, "\n"),
       author: editState.author.trim(),
-      choices: editState.choices.map((choice) => ({
-        text: choice.text.trim(),
-        isCorrect: choice.isCorrect,
-      })),
+      choices:
+        editState.questionType === "mcq"
+          ? editState.choices.map((choice) => ({
+              text: choice.text.trim(),
+              isCorrect: choice.isCorrect,
+            }))
+          : [],
+      questionType: editState.questionType,
+      identificationAnswers:
+        editState.questionType === "identification"
+          ? editState.identificationAnswers.filter((a) => a.trim().length > 0)
+          : undefined,
       isPreviousExam: editState.isPreviousExam,
       examSchoolYear: editState.isPreviousExam ? editState.examSchoolYear : undefined,
       examSemester: editState.isPreviousExam ? editState.examSemester : undefined,
@@ -575,25 +651,37 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                           key={question.id}
                           className="flex flex-col gap-4 rounded-2xl border border-neutral-800 bg-neutral-900/70 p-6 transition hover:border-neutral-700"
                         >
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="flex flex-col">
-                              <span className="text-xs uppercase tracking-wide text-neutral-500">
-                                Card ID
-                              </span>
-                              <span className="text-sm font-medium text-neutral-300">
-                                {question.id}
-                              </span>
-                            </div>
-                            {question.createdAt && (
-                              <div className="text-right text-xs text-neutral-500">
-                                <div>Created</div>
-                                <div>{question.createdAt}</div>
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex flex-col">
+                  <span className="text-xs uppercase tracking-wide text-neutral-500">
+                    Card ID
+                  </span>
+                  <span className="text-sm font-medium text-neutral-300">
+                    {question.id}
+                  </span>
+                  <span className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide border border-blue-500/40 text-blue-200">
+                    {question.questionType === 'identification' ? 'Identification' : 'Multiple Choice'}
+                  </span>
+                </div>
+                {question.createdAt && (
+                  <div className="text-right text-xs text-neutral-500">
+                    <div>Created</div>
+                    <div>{question.createdAt}</div>
                               </div>
                             )}
                           </div>
 
-                          <div className="text-sm text-neutral-200">
-                            {question.question}
+                          <div className="prose prose-invert prose-sm max-w-none">
+                            <ReactMarkdown
+                              remarkPlugins={[remarkGfm]}
+                              components={{
+                                h1: ({node, ...props}) => <h1 className="text-white" {...props} />,
+                                h2: ({node, ...props}) => <h2 className="text-white" {...props} />,
+                                h3: ({node, ...props}) => <h3 className="text-white" {...props} />,
+                              }}
+                            >
+                              {question.question || ''}
+                            </ReactMarkdown>
                           </div>
 
                           {question.imageDataUrls && question.imageDataUrls.length > 0 && (
@@ -611,23 +699,42 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                             </div>
                           )}
 
-                          <div className="flex flex-col gap-2">
-                            {question.choices.map((choice, index) => (
-                              <div
-                                key={index}
-                                className={`rounded-md px-3 py-2 text-sm ${
-                                  choice.isCorrect
-                                    ? "border border-emerald-500/60 bg-emerald-500/10 text-emerald-200"
-                                    : "border border-neutral-800 bg-neutral-950 text-neutral-400"
-                                }`}
-                              >
-                                <span className="font-medium">
-                                  {String.fromCharCode(65 + index)}.
-                                </span>{" "}
-                                {choice.text}
-                              </div>
-                            ))}
-                          </div>
+                          {question.questionType === "identification" ? (
+                            <div className="flex flex-col gap-2">
+                              {question.identificationAnswers && question.identificationAnswers.length > 0 ? (
+                                question.identificationAnswers.map((answer, idx) => (
+                                  <div
+                                    key={idx}
+                                    className="rounded-md border border-emerald-500/60 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200"
+                                  >
+                                    Acceptable #{idx + 1}: <span className="font-semibold">{answer}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-neutral-400">
+                                  No identification answers provided.
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-2">
+                              {question.choices.map((choice, index) => (
+                                <div
+                                  key={index}
+                                  className={`rounded-md px-3 py-2 text-sm ${
+                                    choice.isCorrect
+                                      ? "border border-emerald-500/60 bg-emerald-500/10 text-emerald-200"
+                                      : "border border-neutral-800 bg-neutral-950 text-neutral-400"
+                                  }`}
+                                >
+                                  <span className="font-medium">
+                                    {String.fromCharCode(65 + index)}.
+                                  </span>{" "}
+                                  {choice.text}
+                                </div>
+                              ))}
+                            </div>
+                          )}
 
                           <div className="flex items-center gap-2">
                             <button
@@ -720,6 +827,38 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                 <p className="mt-2 text-xs text-neutral-500">
                   Markdown formatting is supported. Keep the prompt concise and focused on one concept.
                 </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="edit-type-mcq"
+                    name="edit-question-type"
+                    checked={editState.questionType === "mcq"}
+                    onChange={() => handleEditQuestionTypeChange("mcq")}
+                    className="h-4 w-4 cursor-pointer border-neutral-700 bg-neutral-900 text-neutral-200 focus:ring-neutral-400"
+                  />
+                  <label htmlFor="edit-type-mcq" className="text-sm font-medium text-neutral-200 cursor-pointer">
+                    Multiple Choice
+                  </label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="edit-type-identification"
+                    name="edit-question-type"
+                    checked={editState.questionType === "identification"}
+                    onChange={() => handleEditQuestionTypeChange("identification")}
+                    className="h-4 w-4 cursor-pointer border-neutral-700 bg-neutral-900 text-neutral-200 focus:ring-neutral-400"
+                  />
+                  <label
+                    htmlFor="edit-type-identification"
+                    className="text-sm font-medium text-neutral-200 cursor-pointer"
+                  >
+                    Identification
+                  </label>
+                </div>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -924,126 +1063,193 @@ const TheoreticalQuestionLibrary: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
-                    Choices
-                  </h3>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`text-xs font-medium ${
-                        editChoicesMetRequirement ? "text-neutral-500" : "text-rose-400"
-                      }`}
-                    >
-                      {editState.choices.length}/{MIN_CHOICES} required | Max {MAX_CHOICES}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={handleAddChoice}
-                      disabled={editState.choices.length >= MAX_CHOICES}
-                      className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        className="h-3.5 w-3.5"
+              {editState.questionType === "mcq" ? (
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
+                      Choices
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      <span
+                        className={`text-xs font-medium ${editChoicesMetRequirement ? "text-neutral-500" : "text-rose-400"}`}
                       >
-                        <line x1="12" y1="5" x2="12" y2="19" />
-                        <line x1="5" y1="12" x2="19" y2="12" />
-                      </svg>
-                      Add Choice
-                    </button>
+                        {editState.choices.length}/{MIN_CHOICES} required | Max {MAX_CHOICES}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleAddChoice}
+                        disabled={editState.choices.length >= MAX_CHOICES}
+                        className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-3.5 w-3.5"
+                        >
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        Add Choice
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    {editState.choices.map((choice, index) => (
+                      <div
+                        key={choice.id}
+                        className={`flex flex-col rounded-lg border px-4 py-3 transition ${
+                          choice.isCorrect
+                            ? "border-emerald-500/80 bg-emerald-500/10"
+                            : "border-neutral-800 bg-neutral-950"
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-neutral-400">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900 text-xs uppercase text-neutral-300">
+                              {String.fromCharCode(65 + index)}
+                            </span>
+                            <span>Choice {index + 1}</span>
+                          </div>
+
+                          <div className="ml-auto flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleChoiceCorrect(choice.id)}
+                              className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
+                                choice.isCorrect
+                                  ? "border-emerald-400 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                                  : "border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900"
+                              }`}
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3.5 w-3.5"
+                              >
+                                <path d="M20 6L9 17l-5-5" />
+                              </svg>
+                              {choice.isCorrect ? "Correct Answer" : "Mark Correct"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveChoice(choice.id)}
+                              disabled={editState.choices.length <= MIN_CHOICES}
+                              className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3.5 w-3.5"
+                              >
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                                <line x1="10" y1="11" x2="10" y2="17" />
+                                <line x1="14" y1="11" x2="14" y2="17" />
+                              </svg>
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+
+                        <textarea
+                          value={choice.text}
+                          onChange={(event) => handleChoiceTextChange(choice.id, event.target.value)}
+                          placeholder={`Answer option ${index + 1}`}
+                          className="mt-3 min-h-[72px] w-full rounded-md border border-neutral-800 bg-transparent px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                <div className="flex flex-col gap-3">
-                  {editState.choices.map((choice, index) => (
-                    <div
-                      key={choice.id}
-                      className={`flex flex-col rounded-lg border px-4 py-3 transition ${
-                        choice.isCorrect
-                          ? "border-emerald-500/80 bg-emerald-500/10"
-                          : "border-neutral-800 bg-neutral-950"
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-neutral-400">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900 text-xs uppercase text-neutral-300">
-                            {String.fromCharCode(65 + index)}
-                          </span>
-                          <span>Choice {index + 1}</span>
-                        </div>
-
-                        <div className="ml-auto flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleChoiceCorrect(choice.id)}
-                            className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
-                              choice.isCorrect
-                                ? "border-emerald-400 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
-                                : "border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900"
-                            }`}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="h-3.5 w-3.5"
-                            >
-                              <path d="M20 6L9 17l-5-5" />
-                            </svg>
-                            {choice.isCorrect ? "Correct Answer" : "Mark Correct"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveChoice(choice.id)}
-                            disabled={editState.choices.length <= MIN_CHOICES}
-                            className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              className="h-3.5 w-3.5"
-                            >
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                              <line x1="10" y1="11" x2="10" y2="17" />
-                              <line x1="14" y1="11" x2="14" y2="17" />
-                            </svg>
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-
-                      <textarea
-                        value={choice.text}
-                        onChange={(event) => handleChoiceTextChange(choice.id, event.target.value)}
-                        placeholder={`Answer option ${index + 1}`}
-                        className="mt-3 min-h-[72px] w-full rounded-md border border-neutral-800 bg-transparent px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
-                      />
+              ) : (
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
+                      Identification Answers
+                    </h3>
+                    <div className="flex items-center gap-3 text-xs text-neutral-500">
+                      <span>{editCorrectCount} acceptable answer{editCorrectCount === 1 ? "" : "s"}</span>
+                      <button
+                        type="button"
+                        onClick={handleAddIdentificationAnswerEdit}
+                        className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="h-3.5 w-3.5"
+                        >
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
+                        Add Answer
+                      </button>
                     </div>
-                  ))}
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    {editState.identificationAnswers.map((answer, idx) => (
+                      <div
+                        key={`${idx}-${editState.record.id}`}
+                        className="flex items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-950 px-4 py-3"
+                      >
+                        <div className="text-xs uppercase tracking-wide text-neutral-500">#{idx + 1}</div>
+                        <input
+                          value={answer}
+                          onChange={(event) => handleIdentificationChangeEdit(idx, event.target.value)}
+                          placeholder="Acceptable answer (case sensitive)"
+                          className="flex-1 rounded-md border border-neutral-800 bg-transparent px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveIdentificationEdit(idx)}
+                          className="inline-flex items-center justify-center rounded-md border border-neutral-800 p-2 text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+                        >
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="h-3.5 w-3.5"
+                          >
+                            <path d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="mt-4 flex flex-col gap-3 border-t border-neutral-900 pt-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-xs text-neutral-500">
-                  Minimum {MIN_CHOICES} choices. You can mark multiple choices as correct to support
-                  select-all-that-apply questions.
+                  {editState.questionType === "mcq"
+                    ? `Minimum ${MIN_CHOICES} choices. You can mark multiple choices as correct to support select-all-that-apply questions.`
+                    : "Provide at least one acceptable answer. Matching is case sensitive."}
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="rounded-md border border-neutral-800 bg-neutral-900 px-4 py-2 text-xs uppercase tracking-wide text-neutral-400">
