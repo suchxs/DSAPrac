@@ -12,6 +12,7 @@ export interface ElectronAPI {
   // Progress APIs
   getProgress: () => Promise<ProgressData>;
   updateTheory: (tag: string, answeredDelta: number | string[]) => Promise<ProgressData>;
+  resetTheoryProgress: (lessons: string[]) => Promise<ProgressData>;
   setPracticalDone: (problemId: string, done: boolean, totalTests?: number) => Promise<ProgressData>;
   recordActivity: (dateKey?: string) => Promise<ProgressData>;
   // Question APIs
@@ -103,6 +104,9 @@ export interface CreateTheoreticalQuestionPayload {
   lesson: string;
   author: string;
   choices: ChoicePayload[];
+  questionType?: 'mcq' | 'identification' | 'multi-identification';
+  identificationAnswers?: string[];
+  multiIdentificationItems?: { subtitle?: string; answers: string[] }[];
   image?: ImagePayload | null;   // Legacy single image
   images?: ImagePayload[];       // New multiple images
   isPreviousExam?: boolean;
@@ -133,8 +137,9 @@ export interface TheoreticalQuestionRecord {
   author?: string;
   choices: Array<{ text: string; isCorrect: boolean }>;
   correctCount: number;
-  questionType?: 'mcq' | 'identification';
+  questionType?: 'mcq' | 'identification' | 'multi-identification';
   identificationAnswers?: string[];
+  multiIdentificationItems?: { subtitle?: string; answers: string[] }[];
   imageDataUrl?: string | null;   // Legacy single image
   imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
@@ -152,10 +157,9 @@ export interface UpdateTheoreticalQuestionPayload {
   question: string;
   author: string;
   choices: ChoicePayload[];
-  questionType?: 'mcq' | 'identification';
+  questionType?: 'mcq' | 'identification' | 'multi-identification';
   identificationAnswers?: string[];
-  questionType?: 'mcq' | 'identification';
-  identificationAnswers?: string[];
+  multiIdentificationItems?: { subtitle?: string; answers: string[] }[];
   image?: ImagePayload | null;   // Legacy single image
   images?: ImagePayload[];       // New multiple images
   isPreviousExam?: boolean;
