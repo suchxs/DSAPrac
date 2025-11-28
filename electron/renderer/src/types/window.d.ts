@@ -42,6 +42,10 @@ export interface ElectronAPI {
   recordPracticalActivity: (payload: RecordPracticalActivityPayload) => Promise<void>;
   runDevConsoleCommand: (command: string) => Promise<{ ok: boolean; output: string[]; action?: string }>;
   onDevConsoleLog: (callback: (entry: { level: string; message: string; source?: string; line?: number }) => void) => () => void;
+  getPracticalHistory: (payload: { questionId: string }) => Promise<any[]>;
+  recordPracticalSubmission: (payload: { questionId: string; files: { filename: string; content: string }[]; testResults: any[]; score: number; maxScore: number }) => Promise<any>;
+  setPracticalIteration: (payload: { questionId: string; files: { filename: string; content: string }[] }) => Promise<any>;
+  clearPracticalIteration: (payload: { questionId: string }) => Promise<any>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;

@@ -56,6 +56,14 @@ type ProgressData = {
   practical: Record<string, PracticalProgress>;
   activity: Record<string, number>; // YYYY-MM-DD -> count
 };
+type PracticalHistoryEntry = {
+  timestamp: string;
+  files: { filename: string; content: string }[];
+  testResults?: { index: number; passed: boolean; actualOutput?: string; expectedOutput?: string; executionTime?: number; memoryUsage?: number; error?: string }[];
+  score?: number;
+  maxScore?: number;
+  kind: 'submission' | 'iteration';
+};
 
 type ChoicePayload = { text: string; isCorrect: boolean };
 type ImagePayload = { name: string; dataUrl: string; order?: number };
@@ -238,6 +246,14 @@ function getProgressPath(): string {
 
 function getSettingsPath(): string {
   return path.join(getUserDataDir(), 'settings.json');
+}
+
+function getHistoryDir(): string {
+  return path.join(getUserDataDir(), 'practical-history');
+}
+
+function getHistoryPath(questionId: string): string {
+  return path.join(getHistoryDir(), `${questionId}.json`);
 }
 
 interface AppSettings {
@@ -451,6 +467,87 @@ function calculateQuestionCounts(progress: ProgressData): QuestionCounts {
 function broadcastDataRefresh(payload: { counts: QuestionCounts; progress: ProgressData }) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('data:refresh', payload);
+  }
+}
+
+function savePracticalHistorySnapshot(
+  questionId: string,
+  entry: PracticalHistoryEntry
+): void {
+  try {
+    ensureDirExists(getHistoryDir());
+    const historyPath = getHistoryPath(questionId);
+    let existing: PracticalHistoryEntry[] = [];
+    if (fs.existsSync(historyPath)) {
+      const raw = fs.readFileSync(historyPath, 'utf-8');
+      existing = JSON.parse(raw);
+    }
+
+    if (entry.kind === 'iteration') {
+      existing = existing.filter((e) => e.kind !== 'iteration');
+      existing.unshift(entry);
+    } else {
+      const iterations = existing.filter((e) => e.kind === 'iteration');
+      const submissions = existing.filter((e) => e.kind === 'submission');
+      submissions.unshift(entry);
+      const trimmedSubmissions = submissions.slice(0, 5);
+      existing = [...iterations, ...trimmedSubmissions];
+    }
+
+    fs.writeFileSync(historyPath, JSON.stringify(existing, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[History] Failed to save history snapshot:', err);
+  }
+}
+
+function setIterationHistory(questionId: string, files: { filename: string; content: string }[]) {
+  try {
+    ensureDirExists(getHistoryDir());
+    const historyPath = getHistoryPath(questionId);
+    let existing: PracticalHistoryEntry[] = [];
+    if (fs.existsSync(historyPath)) {
+      const raw = fs.readFileSync(historyPath, 'utf-8');
+      existing = JSON.parse(raw);
+    }
+
+    const entry: PracticalHistoryEntry = {
+      timestamp: new Date().toISOString(),
+      files,
+      kind: 'iteration',
+    };
+
+    // Keep latest iteration at front, remove older iterations
+    existing = existing.filter((e) => e.kind !== 'iteration');
+    existing.unshift(entry);
+
+    fs.writeFileSync(historyPath, JSON.stringify(existing, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[History] Failed to save history snapshot:', err);
+  }
+}
+
+function clearIterationHistory(questionId: string) {
+  try {
+    const historyPath = getHistoryPath(questionId);
+    if (!fs.existsSync(historyPath)) return;
+    const raw = fs.readFileSync(historyPath, 'utf-8');
+    const parsed: PracticalHistoryEntry[] = JSON.parse(raw);
+    const filtered = parsed.filter((e) => e.kind !== 'iteration');
+    fs.writeFileSync(historyPath, JSON.stringify(filtered, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('[History] Failed to clear iteration history:', err);
+  }
+}
+
+function loadPracticalHistory(questionId: string): PracticalHistoryEntry[] {
+  try {
+    const historyPath = getHistoryPath(questionId);
+    if (!fs.existsSync(historyPath)) return [];
+    const raw = fs.readFileSync(historyPath, 'utf-8');
+    return JSON.parse(raw);
+  } catch (err) {
+    console.warn('[History] Failed to load history:', err);
+    return [];
   }
 }
 
@@ -3177,6 +3274,12 @@ app.whenReady().then(() => {
         fs.unlinkSync(progressFile);
       }
 
+      // Remove history snapshots
+      const historyPath = getHistoryPath(payload.questionId);
+      if (fs.existsSync(historyPath)) {
+        fs.unlinkSync(historyPath);
+      }
+
       // Reset the practical progress in the main progress data
       const progressPath = getProgressPath();
       if (fs.existsSync(progressPath)) {
@@ -3285,6 +3388,38 @@ app.whenReady().then(() => {
     } catch (error: any) {
       return { error: error.message || 'Failed to run code' };
     }
+  });
+
+  ipcMain.handle('practical:getHistory', async (_event, payload: { questionId: string }) => {
+    return loadPracticalHistory(payload.questionId);
+  });
+
+  ipcMain.handle('practical:recordSubmission', async (_event, payload: {
+    questionId: string;
+    files: { filename: string; content: string }[];
+    testResults: any[];
+    score: number;
+    maxScore: number;
+  }) => {
+    savePracticalHistorySnapshot(payload.questionId, {
+      timestamp: new Date().toISOString(),
+      files: payload.files,
+      testResults: payload.testResults,
+      score: payload.score,
+      maxScore: payload.maxScore,
+      kind: 'submission',
+    });
+    return { success: true };
+  });
+
+  ipcMain.handle('practical:setIteration', async (_event, payload: { questionId: string; files: { filename: string; content: string }[] }) => {
+    setIterationHistory(payload.questionId, payload.files);
+    return { success: true };
+  });
+
+  ipcMain.handle('practical:clearIteration', async (_event, payload: { questionId: string }) => {
+    clearIterationHistory(payload.questionId);
+    return { success: true };
   });
 
   ipcMain.handle('submit-practical-solution', async (_event, payload: { questionId: string; files: any[]; testCases: any[] }) => {
