@@ -3422,6 +3422,99 @@ app.whenReady().then(() => {
     return { success: true };
   });
 
+  ipcMain.handle('practical:openCompareOutput', async (_event, payload: { expected: string; actual: string; label?: string }) => {
+    const expected = payload.expected ?? '';
+    const actual = payload.actual ?? '';
+    const label = payload.label ?? 'Test Case';
+
+    const escapeHtml = (s: string) =>
+      s
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Compare Output</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 16px; background: #0b0b0b; color: #e5e5e5; font-family: 'Fira Code', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace; }
+    h1 { font-size: 16px; margin: 0 0 12px; color: #fff; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .panel { border: 1px solid #222; border-radius: 8px; background: #121212; padding: 10px; overflow: auto; max-height: 70vh; }
+    .label { font-size: 11px; color: #9ca3af; margin-bottom: 6px; }
+    pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px; line-height: 1.45; }
+    .diff-expected { background: rgba(16, 185, 129, 0.25); color: #c3f0d2; }
+    .diff-actual { background: rgba(248, 113, 113, 0.25); color: #fca5a5; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(label)} &mdash; Compare Output</h1>
+  <div class="grid">
+    <div class="panel">
+      <div class="label">Expected</div>
+      <pre id="expected"></pre>
+    </div>
+    <div class="panel">
+      <div class="label">Your Output</div>
+      <pre id="actual"></pre>
+    </div>
+  </div>
+  <script>
+    const data = ${JSON.stringify({ expected, actual })};
+    const esc = (s) => s
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+
+    const highlight = (a, b) => {
+      const max = Math.max(a.length, b.length);
+      let ha = '', hb = '';
+      for (let i = 0; i < max; i++) {
+        const ca = a[i];
+        const cb = b[i];
+        if (ca === cb) {
+          if (ca !== undefined) ha += esc(ca);
+          if (cb !== undefined) hb += esc(cb);
+        } else {
+          if (ca !== undefined) ha += '<span class="diff-expected">' + esc(ca) + '</span>';
+          if (cb !== undefined) hb += '<span class="diff-actual">' + esc(cb) + '</span>';
+        }
+      }
+      return { ha, hb };
+    };
+
+    const res = highlight(data.expected, data.actual);
+    document.getElementById('expected').innerHTML = res.ha || '<span style="color:#6b7280">[empty]</span>';
+    document.getElementById('actual').innerHTML = res.hb || '<span style="color:#6b7280">[empty]</span>';
+  </script>
+</body>
+</html>`;
+
+    const compareWin = new BrowserWindow({
+      width: 900,
+      height: 650,
+      title: 'Compare Output',
+      autoHideMenuBar: true,
+      show: true,
+      backgroundColor: '#0b0b0b',
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+
+    compareWin.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+    return { success: true };
+  });
+
   ipcMain.handle('submit-practical-solution', async (_event, payload: { questionId: string; files: any[]; testCases: any[] }) => {
     try {
       const language = payload.files[0]?.language === 'cpp' ? 'cpp' : 'c';

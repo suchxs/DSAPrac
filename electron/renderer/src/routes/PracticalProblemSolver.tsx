@@ -1396,12 +1396,20 @@ const PracticalProblemSolver: React.FC = () => {
                         </span>
                       </div>
                     )}
-                    {result && !result.passed && result.actualOutput && (
-                      <div>
-                        <div className="text-zinc-400 mb-0.5">Actual Output:</div>
-                        <pre className="bg-black p-2 rounded text-xs overflow-x-auto text-red-400">
-                          {result.actualOutput}
-                        </pre>
+                    {result && !tc.isHidden && !result.passed && (
+                      <div className="mt-2">
+                        <button
+                          className="text-[11px] px-2.5 py-1 rounded border border-blue-500/60 text-blue-200 hover:bg-blue-500/10 transition cursor-pointer"
+                          onClick={() =>
+                            window.api.openCompareOutput({
+                              expected: tc.expectedOutput,
+                              actual: result.actualOutput || '',
+                              label: `Test Case ${index + 1}`,
+                            })
+                          }
+                        >
+                          Compare output
+                        </button>
                       </div>
                     )}
                     {result?.error && (

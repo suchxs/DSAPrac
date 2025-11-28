@@ -46,6 +46,7 @@ export interface ElectronAPI {
   recordPracticalSubmission: (payload: { questionId: string; files: { filename: string; content: string }[]; testResults: any[]; score: number; maxScore: number }) => Promise<any>;
   setPracticalIteration: (payload: { questionId: string; files: { filename: string; content: string }[] }) => Promise<any>;
   clearPracticalIteration: (payload: { questionId: string }) => Promise<any>;
+  openCompareOutput: (payload: { expected: string; actual: string; label?: string }) => Promise<any>;
   // Window controls
   windowMinimize: () => void;
   windowMaximize: () => void;
