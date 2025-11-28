@@ -11,6 +11,7 @@ const QuestionMaker: React.FC = () => {
   const navigate = useNavigate();
   const [counts, setCounts] = useState<QuestionCounts>({ theoretical: 0, practical: 0 });
   const [showRevealPrompt, setShowRevealPrompt] = useState(false);
+  const [showPracticalPrompt, setShowPracticalPrompt] = useState(false);
 
   useEffect(() => {
     loadQuestionCounts();
@@ -57,7 +58,7 @@ const QuestionMaker: React.FC = () => {
   };
 
   const handleViewAllPractical = () => {
-    navigate('/question-maker/practical/library');
+    setShowPracticalPrompt(true);
   };
 
   const handleBack = () => {
@@ -200,6 +201,36 @@ const QuestionMaker: React.FC = () => {
               <button
                 type="button"
                 onClick={handleConfirmReveal}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-semibold text-black transition hover:bg-white cursor-pointer"
+              >
+                View Questions
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPracticalPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-900 p-6 text-neutral-100 shadow-xl">
+            <h2 className="text-xl font-semibold">View Practical Questions?</h2>
+            <p className="mt-2 text-sm text-neutral-400">
+              You&apos;re about to open the full practical problem bank. Proceed only if you want to edit or review them outside exam/practice context.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowPracticalPrompt(false)}
+                className="inline-flex items-center justify-center rounded-md border border-neutral-800 px-4 py-2 text-sm font-medium text-neutral-300 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+              >
+                Stay Here
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPracticalPrompt(false);
+                  navigate('/question-maker/practical/library');
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm font-semibold text-black transition hover:bg-white cursor-pointer"
               >
                 View Questions
