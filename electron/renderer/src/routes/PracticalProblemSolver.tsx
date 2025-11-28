@@ -52,6 +52,16 @@ interface TestResult {
   error?: string;
 }
 
+type HistoryEntryKind = 'submission' | 'iteration';
+interface HistoryEntry {
+  timestamp: string;
+  kind: HistoryEntryKind;
+  files: { filename: string; content: string }[];
+  testResults?: TestResult[];
+  score?: number;
+  maxScore?: number;
+}
+
 const DEFAULT_ANSWER_CONTENT = '// Put your answer here\n';
 const TIMER_STORAGE_PREFIX = 'practical-timer-';
 const RESULTS_STORAGE_PREFIX = 'practical-results-';
@@ -108,6 +118,55 @@ const PracticalProblemSolver: React.FC = () => {
   const baseElapsedRef = useRef<number>(0);
   const [avgExecMs, setAvgExecMs] = useState<number | null>(null);
   const [avgMemKb, setAvgMemKb] = useState<number | null>(null);
+  const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [pendingRestoreEntry, setPendingRestoreEntry] = useState<HistoryEntry | null>(null);
+
+  const formatTimestamp = (ts: string) => {
+    try {
+      const d = new Date(ts);
+      return d.toLocaleString();
+    } catch {
+      return ts;
+    }
+  };
+
+  const submissionEntries = historyEntries.filter((h) => h.kind === 'submission');
+  const iterationEntry = historyEntries.find((h) => h.kind === 'iteration') || null;
+
+  const openRestoreModal = (entry: HistoryEntry) => {
+    setPendingRestoreEntry(entry);
+    setShowRestoreModal(true);
+  };
+
+  const confirmRestore = async () => {
+    if (!pendingRestoreEntry || !question) {
+      setShowRestoreModal(false);
+      return;
+    }
+
+    try {
+      if (pendingRestoreEntry.kind === 'submission') {
+        // Before restoring submission, save current state as latest iteration
+        await window.api.setPracticalIteration({
+          questionId: question.id,
+          files: allFiles.map((f) => ({ filename: f.filename, content: f.content })),
+        });
+      } else if (pendingRestoreEntry.kind === 'iteration') {
+        // After restoring iteration, remove iteration from history
+        await window.api.clearPracticalIteration({ questionId: question.id });
+      }
+
+      restoreFromHistory(pendingRestoreEntry);
+      const history = await window.api.getPracticalHistory({ questionId: question.id });
+      setHistoryEntries(Array.isArray(history) ? history : []);
+    } catch (e) {
+      console.warn('Failed to restore history entry', e);
+    } finally {
+      setShowRestoreModal(false);
+      setPendingRestoreEntry(null);
+    }
+  };
   
   // Settings state
   const [autoSaveEnabled, setAutoSaveEnabled] = useState(true);
@@ -145,6 +204,14 @@ const PracticalProblemSolver: React.FC = () => {
         questionId: question.id,
         files: filesToSave,
       });
+      try {
+        if (question.id) {
+          const history = await window.api.getPracticalHistory({ questionId: question.id });
+          setHistoryEntries(Array.isArray(history) ? history : []);
+        }
+      } catch (e) {
+        console.warn('Failed to refresh history after save', e);
+      }
       // Persist timer on explicit save
       const key = `${TIMER_STORAGE_PREFIX}${question.id}`;
       const currentElapsed = getCurrentElapsedMs();
@@ -434,6 +501,17 @@ const PracticalProblemSolver: React.FC = () => {
         currentFileRef.current = firstAnswerFile.filename;
         setCode(firstAnswerFile.content);
       }
+
+      // Load submission history (includes latest iteration)
+      if (questionData.id) {
+        try {
+          const history = await window.api.getPracticalHistory({ questionId: questionData.id });
+          setHistoryEntries(Array.isArray(history) ? history : []);
+        } catch (e) {
+          console.warn('Failed to load history', e);
+          setHistoryEntries([]);
+        }
+      }
     } catch (error) {
       console.error('Failed to load question:', error);
     }
@@ -658,6 +736,33 @@ const PracticalProblemSolver: React.FC = () => {
     stopTimer();
   };
 
+  const restoreFromHistory = (entry: HistoryEntry) => {
+    // Merge snapshot contents onto current files (preserving metadata)
+    setAllFiles((prevAll) => {
+      const merged = prevAll.map((f) => {
+        const snap = entry.files.find((sf) => sf.filename === f.filename);
+        return snap ? { ...f, content: snap.content } : f;
+      });
+      const visible = merged.filter((f) => !f.isHidden);
+      setFiles(visible);
+      filesContentRef.current = new Map(visible.map((f) => [f.filename, f.content]));
+      // Select first answer file or first visible file
+      const nextFile = visible.find((f) => f.isAnswerFile) || visible[0];
+      if (nextFile) {
+        setSelectedFile(nextFile.filename);
+        currentFileRef.current = nextFile.filename;
+        setCode(nextFile.content);
+      }
+      setHasUnsavedChanges(false);
+      return merged;
+    });
+  };
+
+  const closeRestoreModal = () => {
+    setShowRestoreModal(false);
+    setPendingRestoreEntry(null);
+  };
+
   const handleSubmit = async () => {
     if (!question) return;
 
@@ -727,6 +832,21 @@ const PracticalProblemSolver: React.FC = () => {
         await window.api.setPracticalDone(question.id, true, totalTests);
         setRunOutput(`All tests passed. Avg ⏱ ${avgExec.toFixed(2)} ms • Avg 💾 ${(avgMem / 1024).toFixed(2)} MB`);
         setShowSuccessModal(true);
+      }
+
+      // Persist submission history entry (top 5) and refresh list
+      try {
+        await window.api.recordPracticalSubmission({
+          questionId: question.id,
+          files: allFiles.map((f) => ({ filename: f.filename, content: f.content })),
+          testResults: results.testResults || [],
+          score: passedCount,
+          maxScore: totalTests,
+        });
+        const history = await window.api.getPracticalHistory({ questionId: question.id });
+        setHistoryEntries(Array.isArray(history) ? history : []);
+      } catch (e) {
+        console.warn('Failed to record submission history', e);
       }
 
       const visibleTests = question.testCases.filter((tc) => !tc.isHidden).length;
@@ -1152,6 +1272,64 @@ const PracticalProblemSolver: React.FC = () => {
               </div>
             </div>
 
+            {/* Submission History */}
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-semibold">Submission History</h3>
+                <span className="text-[11px] text-neutral-500">
+                  {submissionEntries.length} / 5 submissions
+                </span>
+              </div>
+              {historyEntries.length === 0 && (
+                <div className="text-xs text-neutral-500">No history yet.</div>
+              )}
+              <div className="space-y-2">
+                {iterationEntry && (
+                  <div
+                    className="p-2.5 rounded border border-amber-400 bg-amber-500/10 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-amber-200 truncate">
+                        Latest iteration (draft)
+                      </div>
+                      <div className="text-[11px] text-amber-100">{formatTimestamp(iterationEntry.timestamp)}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-amber-100">Draft</span>
+                      <button
+                        className="text-[11px] px-2.5 py-1 rounded border border-amber-300 text-amber-50 hover:bg-amber-500/20 transition cursor-pointer shrink-0"
+                        onClick={() => openRestoreModal(iterationEntry)}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {submissionEntries.map((entry, idx) => (
+                  <div
+                    key={`submission-${idx}-${entry.timestamp}`}
+                    className="p-2.5 rounded border border-zinc-800 bg-zinc-950 flex items-center justify-between gap-3"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-white truncate">Submission</div>
+                      <div className="text-[11px] text-neutral-400">{formatTimestamp(entry.timestamp)}</div>
+                      {typeof entry.score === 'number' && typeof entry.maxScore === 'number' && (
+                        <div className="text-[11px] text-neutral-300">
+                          {entry.score}/{entry.maxScore} test cases passed
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      className="text-[11px] px-2.5 py-1 rounded border border-blue-500/60 text-blue-200 hover:bg-blue-500/10 transition cursor-pointer shrink-0"
+                      onClick={() => openRestoreModal(entry)}
+                    >
+                      Restore
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <h3 className="text-sm font-semibold mb-3">Test Cases</h3>
             <div className="flex flex-col gap-4">
               {question.testCases.map((tc, index) => {
@@ -1321,6 +1499,48 @@ const PracticalProblemSolver: React.FC = () => {
                 className="px-6 py-2.5 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-500 hover:to-red-600 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 shadow-lg shadow-red-900/30 cursor-pointer"
               >
                 Reset File
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Restore Confirmation Modal */}
+      {showRestoreModal && pendingRestoreEntry && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 animate-fadeIn">
+          <div className="bg-gradient-to-br from-zinc-900/95 to-zinc-800/95 border border-amber-500/40 rounded-2xl p-8 w-[480px] shadow-2xl">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-amber-500/15 flex items-center justify-center border border-amber-500/30">
+                <svg className="w-6 h-6 text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M4.93 4.93l14.14 14.14" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <h2 className="text-xl font-bold mb-2 text-amber-50">
+                  Restore code?
+                </h2>
+                <p className="text-sm text-amber-100/90 leading-relaxed">
+                  This will replace your current code with the selected {pendingRestoreEntry.kind === 'iteration' ? 'draft' : 'submission'}.
+                  Your current work will be saved as a draft before restoring.
+                </p>
+                <div className="mt-3 font-mono text-xs bg-zinc-950 border border-zinc-800 rounded px-2 py-1 inline-block text-neutral-200">
+                  {formatTimestamp(pendingRestoreEntry.timestamp)}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={closeRestoreModal}
+                className="px-6 py-2.5 bg-zinc-800/80 hover:bg-zinc-700/80 border border-zinc-600/50 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRestore}
+                className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 rounded-lg text-sm font-medium transition-all hover:scale-105 active:scale-95 shadow-lg shadow-amber-900/30 cursor-pointer"
+              >
+                Restore
               </button>
             </div>
           </div>
