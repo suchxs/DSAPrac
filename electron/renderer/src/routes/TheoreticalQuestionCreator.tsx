@@ -15,7 +15,7 @@ interface ImageItem {
   name: string;
 }
 
-const MIN_CHOICES = 6;
+const MIN_CHOICES = 4;
 const MAX_CHOICES = 10;
 const MAX_IMAGES = 5;
 
@@ -28,7 +28,9 @@ const createChoice = (index: number): Choice => ({
 const TheoreticalQuestionCreator: React.FC = () => {
   const navigate = useNavigate();
   const [question, setQuestion] = useState('');
+  const [questionType, setQuestionType] = useState<'mcq' | 'identification'>('mcq');
   const [choices, setChoices] = useState<Choice[]>([]);
+  const [identificationAnswers, setIdentificationAnswers] = useState<string[]>(['']);
   const [section, setSection] = useState('');
   const [lesson, setLesson] = useState('');
   const [images, setImages] = useState<ImageItem[]>([]);
@@ -48,8 +50,11 @@ const TheoreticalQuestionCreator: React.FC = () => {
   const [examSemester, setExamSemester] = useState('');
 
   const correctCount = useMemo(
-    () => choices.reduce((count, choice) => (choice.isCorrect ? count + 1 : count), 0),
-    [choices]
+    () =>
+      questionType === 'mcq'
+        ? choices.reduce((count, choice) => (choice.isCorrect ? count + 1 : count), 0)
+        : identificationAnswers.filter((a) => a.trim().length > 0).length,
+    [choices, questionType, identificationAnswers]
   );
 
   const lessonOptions = useMemo(() => {
@@ -81,6 +86,18 @@ const TheoreticalQuestionCreator: React.FC = () => {
 
   const handleRemoveChoice = (id: string) => {
     setChoices((prev) => prev.filter((choice) => choice.id !== id));
+  };
+
+  const handleAddIdentificationAnswer = () => {
+    setIdentificationAnswers((prev) => [...prev, '']);
+  };
+
+  const handleIdentificationChange = (idx: number, value: string) => {
+    setIdentificationAnswers((prev) => prev.map((ans, i) => (i === idx ? value : ans)));
+  };
+
+  const handleRemoveIdentification = (idx: number) => {
+    setIdentificationAnswers((prev) => prev.filter((_, i) => i !== idx));
   };
 
   const handleSectionChange = (value: string) => {
@@ -200,11 +217,16 @@ const TheoreticalQuestionCreator: React.FC = () => {
     if (!question.trim()) return false;
     if (!section || !lesson) return false;
     if (!author.trim()) return false;
-    if (choices.length < MIN_CHOICES) return false;
-    const filledChoices = choices.every((choice) => choice.text.trim().length > 0);
-    if (!filledChoices) return false;
-    return correctCount > 0;
-  }, [question, section, lesson, author, choices, correctCount]);
+    if (questionType === 'mcq') {
+      if (choices.length < MIN_CHOICES) return false;
+      const filledChoices = choices.every((choice) => choice.text.trim().length > 0);
+      if (!filledChoices) return false;
+      return correctCount > 0;
+    } else {
+      const filledIds = identificationAnswers.filter((a) => a.trim().length > 0).length;
+      return filledIds > 0;
+    }
+  }, [question, section, lesson, author, choices, correctCount, questionType, identificationAnswers]);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -224,10 +246,16 @@ const TheoreticalQuestionCreator: React.FC = () => {
           dataUrl: img.preview,
           order: index,
         })),
-        choices: choices.map((choice) => ({
-          text: choice.text.trim(),
-          isCorrect: choice.isCorrect,
-        })),
+        choices: questionType === 'mcq'
+          ? choices.map((choice) => ({
+              text: choice.text.trim(),
+              isCorrect: choice.isCorrect,
+            }))
+          : [],
+        questionType,
+        identificationAnswers: questionType === 'identification'
+          ? identificationAnswers.filter((a) => a.trim().length > 0)
+          : undefined,
         isPreviousExam,
         examSchoolYear: isPreviousExam ? examSchoolYear : undefined,
         examSemester: isPreviousExam ? examSemester : undefined,
@@ -551,128 +579,204 @@ const TheoreticalQuestionCreator: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-4 flex-wrap">
               <h2 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
-                Choices
+                Question Type
               </h2>
-              <div className="flex items-center gap-3">
-                <span
-                  className={`text-xs font-medium ${
-                    choiceRequirementMet ? 'text-neutral-500' : 'text-rose-400'
-                  }`}
-                >
-                  {choices.length}/{MIN_CHOICES} required | Max {MAX_CHOICES}
-                </span>
-                <button
-                  type="button"
-                  onClick={handleAddChoice}
-                  disabled={choices.length >= MAX_CHOICES}
-                  className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="h-3.5 w-3.5"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  Add Choice
-                </button>
-              </div>
+              <label className="flex items-center gap-2 text-xs text-neutral-200">
+                <input
+                  type="radio"
+                  checked={questionType === 'mcq'}
+                  onChange={() => setQuestionType('mcq')}
+                  className="h-3 w-3 text-blue-500 bg-neutral-900 border-neutral-700"
+                />
+                Multiple Choice
+              </label>
+              <label className="flex items-center gap-2 text-xs text-neutral-200">
+                <input
+                  type="radio"
+                  checked={questionType === 'identification'}
+                  onChange={() => setQuestionType('identification')}
+                  className="h-3 w-3 text-blue-500 bg-neutral-900 border-neutral-700"
+                />
+                Identification
+              </label>
             </div>
 
-            <div className="flex flex-col gap-3">
-              {choices.length === 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-dashed border-neutral-800 bg-neutral-950 px-4 py-6 text-sm text-neutral-500">
-                  No choices yet. Use "Add Choice" to start adding answer options.
-                </div>
-              )}
-              {choices.map((choice, index) => {
-                const label = String.fromCharCode(65 + index);
-                const isCorrect = choice.isCorrect;
-
-                return (
-                  <div
-                    key={choice.id}
-                    className={`flex flex-col rounded-lg border px-4 py-3 transition ${
-                      isCorrect
-                        ? 'border-emerald-500/80 bg-emerald-500/10'
-                        : 'border-neutral-800 bg-neutral-950'
-                    }`}
-                  >
-                    <div className="flex flex-wrap items-center gap-3">
-                      <div className="flex items-center gap-2 text-sm font-semibold text-neutral-400">
-                        <span className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900 text-xs uppercase text-neutral-300">
-                          {label}
-                        </span>
-                        <span>Choice {index + 1}</span>
-                      </div>
-
-                      <div className="ml-auto flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => toggleCorrect(choice.id)}
-                      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
-                        isCorrect
-                          ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
-                          : 'border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900'
+            {questionType === 'mcq' ? (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
+                    Choices
+                  </h2>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`text-xs font-medium ${
+                        choiceRequirementMet ? 'text-neutral-500' : 'text-rose-400'
                       }`}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-3.5 w-3.5"
-                          >
-                            <path d="M20 6L9 17l-5-5" />
-                          </svg>
-                          {isCorrect ? 'Correct Answer' : 'Mark Correct'}
-                        </button>
+                    >
+                      {choices.length}/{MIN_CHOICES} required | Max {MAX_CHOICES}
+                    </span>
                     <button
                       type="button"
-                      onClick={() => handleRemoveChoice(choice.id)}
-                      className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="h-3.5 w-3.5"
-                          >
-                            <polyline points="3 6 5 6 21 6" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            <line x1="10" y1="11" x2="10" y2="17" />
-                            <line x1="14" y1="11" x2="14" y2="17" />
-                          </svg>
-                          Remove
-                        </button>
-                      </div>
-                    </div>
-
-                    <textarea
-                      value={choice.text}
-                      onChange={(event) => handleChoiceTextChange(choice.id, event.target.value)}
-                      placeholder={`Answer option ${index + 1}`}
-                      className="mt-3 min-h-[72px] w-full rounded-md border border-neutral-800 bg-transparent px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
-                    />
+                      onClick={handleAddChoice}
+                      disabled={choices.length >= MAX_CHOICES}
+                      className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="h-3.5 w-3.5"
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      Add Choice
+                    </button>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+
+                <div className="flex flex-col gap-3">
+                  {choices.length === 0 && (
+                    <div className="flex items-center justify-between rounded-lg border border-dashed border-neutral-800 bg-neutral-950 px-4 py-6 text-sm text-neutral-500">
+                      No choices yet. Use "Add Choice" to start adding answer options.
+                    </div>
+                  )}
+                  {choices.map((choice, index) => {
+                    const label = String.fromCharCode(65 + index);
+                    const isCorrect = choice.isCorrect;
+
+                    return (
+                      <div
+                        key={choice.id}
+                        className={`flex flex-col rounded-lg border px-4 py-3 transition ${
+                          isCorrect
+                            ? 'border-emerald-500/80 bg-emerald-500/10'
+                            : 'border-neutral-800 bg-neutral-950'
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-neutral-400">
+                            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-neutral-800 bg-neutral-900 text-xs uppercase text-neutral-300">
+                              {label}
+                            </span>
+                            <span>Choice {index + 1}</span>
+                          </div>
+
+                          <div className="ml-auto flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleCorrect(choice.id)}
+                          className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
+                            isCorrect
+                              ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30'
+                              : 'border-neutral-800 text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900'
+                          }`}
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3.5 w-3.5"
+                              >
+                                <path d="M20 6L9 17l-5-5" />
+                              </svg>
+                              {isCorrect ? 'Correct Answer' : 'Mark Correct'}
+                            </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveChoice(choice.id)}
+                          className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-200 cursor-pointer"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="h-3.5 w-3.5"
+                              >
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                <line x1="10" y1="11" x2="10" y2="17" />
+                                <line x1="14" y1="11" x2="14" y2="17" />
+                              </svg>
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+
+                        <textarea
+                          value={choice.text}
+                          onChange={(event) => handleChoiceTextChange(choice.id, event.target.value)}
+                          placeholder={`Answer option ${index + 1}`}
+                          className="mt-3 min-h-[72px] w-full rounded-md border border-neutral-800 bg-transparent px-3 py-2 text-sm text-neutral-100 outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-neutral-200 uppercase tracking-wide">
+                    Identification Answers
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={handleAddIdentificationAnswer}
+                    className="inline-flex items-center gap-2 rounded-md border border-neutral-800 px-3 py-2 text-xs font-medium text-neutral-200 transition hover:border-neutral-700 hover:bg-neutral-900 cursor-pointer"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="h-3.5 w-3.5"
+                    >
+                      <line x1="12" y1="5" x2="12" y2="19" />
+                      <line x1="5" y1="12" x2="19" y2="12" />
+                    </svg>
+                    Add Answer
+                  </button>
+                </div>
+                {identificationAnswers.map((ans, idx) => (
+                  <div key={`ident-${idx}`} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={ans}
+                      onChange={(e) => handleIdentificationChange(idx, e.target.value)}
+                      placeholder="Correct answer"
+                      className="flex-1 rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                    />
+                    {identificationAnswers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveIdentification(idx)}
+                        className="text-xs text-rose-300 hover:text-rose-200 px-2 py-1 rounded border border-rose-400/40 bg-rose-500/10 cursor-pointer"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="mt-10 flex flex-col gap-3 border-t border-neutral-900 pt-6 sm:flex-row sm:items-center sm:justify-between">

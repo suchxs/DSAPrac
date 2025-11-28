@@ -133,6 +133,8 @@ export interface TheoreticalQuestionRecord {
   author?: string;
   choices: Array<{ text: string; isCorrect: boolean }>;
   correctCount: number;
+  questionType?: 'mcq' | 'identification';
+  identificationAnswers?: string[];
   imageDataUrl?: string | null;   // Legacy single image
   imageDataUrls?: string[];       // New multiple images (ordered)
   createdAt?: string;
@@ -150,6 +152,10 @@ export interface UpdateTheoreticalQuestionPayload {
   question: string;
   author: string;
   choices: ChoicePayload[];
+  questionType?: 'mcq' | 'identification';
+  identificationAnswers?: string[];
+  questionType?: 'mcq' | 'identification';
+  identificationAnswers?: string[];
   image?: ImagePayload | null;   // Legacy single image
   images?: ImagePayload[];       // New multiple images
   isPreviousExam?: boolean;

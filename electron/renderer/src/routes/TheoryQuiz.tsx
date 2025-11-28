@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 interface TheoreticalQuestionRecord {
@@ -10,6 +12,8 @@ interface TheoreticalQuestionRecord {
   question: string;
   author?: string;
   choices: Array<{ text: string; isCorrect: boolean }>;
+  questionType?: 'mcq' | 'identification';
+  identificationAnswers?: string[];
   correctCount: number;
   imageDataUrl?: string | null;
   imageDataUrls?: string[];
@@ -24,6 +28,7 @@ interface QuizAnswer {
   questionId: string;
   selectedAnswers: number[]; // Changed from single number to array for multiple answers
   isCorrect?: boolean;
+  textAnswer?: string;
 }
 
 interface LocationState {
@@ -100,6 +105,8 @@ const TheoryQuiz: React.FC = () => {
     if (showResults) return;
 
     const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion.questionType === 'identification') return;
+
     const currentAnswer = answers.get(currentQuestion.id);
     const currentSelections = currentAnswer?.selectedAnswers || [];
     
@@ -112,6 +119,20 @@ const TheoryQuiz: React.FC = () => {
     newAnswers.set(currentQuestion.id, {
       questionId: currentQuestion.id,
       selectedAnswers: newSelections,
+    });
+    setAnswers(newAnswers);
+  };
+
+  const handleIdentificationInput = (value: string) => {
+    if (showResults) return;
+    const currentQuestion = questions[currentQuestionIndex];
+    if (currentQuestion.questionType !== 'identification') return;
+
+    const newAnswers = new Map(answers);
+    newAnswers.set(currentQuestion.id, {
+      questionId: currentQuestion.id,
+      selectedAnswers: [],
+      textAnswer: value,
     });
     setAnswers(newAnswers);
   };
@@ -129,7 +150,24 @@ const TheoryQuiz: React.FC = () => {
     
     questions.forEach((q) => {
       const answer = newAnswers.get(q.id);
-      if (answer && answer.selectedAnswers.length > 0) {
+      if (!answer) return;
+
+      if (q.questionType === 'identification') {
+        const provided = (q.identificationAnswers || []).filter((a) => typeof a === 'string' && a.trim().length > 0);
+        const user = answer.textAnswer ?? '';
+        answer.isCorrect = provided.includes(user);
+        newAnswers.set(q.id, answer);
+        if (answer.isCorrect) {
+          const lesson = q.lesson;
+          if (!progressUpdates.has(lesson)) {
+            progressUpdates.set(lesson, []);
+          }
+          progressUpdates.get(lesson)!.push(q.id);
+        }
+        return;
+      }
+
+      if (answer.selectedAnswers.length > 0) {
         // Get all correct answer indices
         const correctIndices = q.choices
           .map((choice, index) => choice.isCorrect ? index : -1)
@@ -264,7 +302,20 @@ const TheoryQuiz: React.FC = () => {
 
   const currentQuestion = questions[currentQuestionIndex];
   const currentAnswer = answers.get(currentQuestion.id);
-  const allAnswered = Array.from(answers.values()).every(a => a.selectedAnswers.length > 0);
+  const isAnswered = (question: TheoreticalQuestionRecord, answer?: QuizAnswer) => {
+    if (!answer) return false;
+    if (question.questionType === 'identification') {
+      return (answer.textAnswer ?? '').trim().length > 0;
+    }
+    return answer.selectedAnswers.length > 0;
+  };
+
+  const answeredCount = questions.reduce((count, q) => {
+    const ans = answers.get(q.id);
+    return isAnswered(q, ans) ? count + 1 : count;
+  }, 0);
+
+  const allAnswered = questions.every((q) => isAnswered(q, answers.get(q.id)));
   const totalCorrect = Array.from(answers.values()).filter(a => a.isCorrect).length;
   const scorePercentage = (totalCorrect / questions.length) * 100;
 
@@ -390,12 +441,12 @@ const TheoryQuiz: React.FC = () => {
         <div className="mb-6">
           <div className="flex items-center justify-between text-sm text-neutral-400 mb-2">
             <span>Progress</span>
-            <span>{Array.from(answers.values()).filter(a => a.selectedAnswers.length > 0).length} / {questions.length} answered</span>
+            <span>{answeredCount} / {questions.length} answered</span>
           </div>
           <div className="w-full bg-neutral-800 rounded-full h-2">
             <div
               className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-              style={{ width: `${(Array.from(answers.values()).filter(a => a.selectedAnswers.length > 0).length / questions.length) * 100}%` }}
+              style={{ width: `${(questions.length === 0 ? 0 : (answeredCount / questions.length) * 100)}%` }}
             />
           </div>
         </div>
@@ -420,9 +471,19 @@ const TheoryQuiz: React.FC = () => {
           )}
 
           {/* Question */}
-          <h2 className="text-xl font-medium mb-4 leading-relaxed">
-            {currentQuestion.question}
-          </h2>
+          <div className="prose prose-invert prose-sm max-w-none mb-4 leading-relaxed">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({node, ...props}) => <h1 className="text-white border-b border-white/10 pb-1" {...props} />,
+                h2: ({node, ...props}) => <h2 className="text-white border-b border-white/10 pb-1" {...props} />,
+                h3: ({node, ...props}) => <h3 className="text-white" {...props} />,
+                hr: () => <hr className="border-t border-white/20 my-2" />,
+              }}
+            >
+              {currentQuestion.question || ''}
+            </ReactMarkdown>
+          </div>
 
           {/* Images */}
           {currentQuestion.imageDataUrls && currentQuestion.imageDataUrls.length > 0 && (
@@ -444,41 +505,54 @@ const TheoryQuiz: React.FC = () => {
 
           {/* Options */}
           <div className="space-y-3">
-            {currentQuestion.choices.map((choice, index) => {
-              const letter = String.fromCharCode(65 + index); // A, B, C, D...
-              const isSelected = currentAnswer?.selectedAnswers.includes(index);
-              
-              return (
-                <button
-                  key={index}
-                  onClick={() => handleAnswerSelect(index)}
-                  className={`w-full text-left p-4 rounded-lg border transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-blue-500/10 border-blue-500 text-blue-400'
-                      : 'bg-neutral-950 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    {/* Checkbox */}
-                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+            {currentQuestion.questionType === 'identification' ? (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs text-neutral-400">Enter your answer (case sensitive)</label>
+                <input
+                  type="text"
+                  value={currentAnswer?.textAnswer ?? ''}
+                  onChange={(e) => handleIdentificationInput(e.target.value)}
+                  className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2 text-sm text-white outline-none transition focus:border-neutral-600 focus:ring-1 focus:ring-neutral-500"
+                  placeholder="Your answer"
+                />
+              </div>
+            ) : (
+              currentQuestion.choices.map((choice, index) => {
+                const letter = String.fromCharCode(65 + index); // A, B, C, D...
+                const isSelected = currentAnswer?.selectedAnswers.includes(index);
+                
+                return (
+                  <button
+                    key={index}
+                    onClick={() => handleAnswerSelect(index)}
+                    className={`w-full text-left p-4 rounded-lg border transition-all cursor-pointer ${
                       isSelected
-                        ? 'border-blue-500 bg-blue-500'
-                        : 'border-neutral-600'
-                    }`}>
-                      {isSelected && (
-                        <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                      )}
+                        ? 'bg-blue-500/10 border-blue-500 text-blue-400'
+                        : 'bg-neutral-950 border-neutral-800 hover:border-neutral-700 hover:bg-neutral-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Checkbox */}
+                      <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                        isSelected
+                          ? 'border-blue-500 bg-blue-500'
+                          : 'border-neutral-600'
+                      }`}>
+                        {isSelected && (
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        )}
+                      </div>
+                      {/* Letter Label */}
+                      <span className="font-semibold text-sm w-6">{letter}.</span>
+                      {/* Answer Text */}
+                      <span className="flex-1">{choice.text}</span>
                     </div>
-                    {/* Letter Label */}
-                    <span className="font-semibold text-sm w-6">{letter}.</span>
-                    {/* Answer Text */}
-                    <span className="flex-1">{choice.text}</span>
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })
+            )}
           </div>
 
           {/* Previous Exam Badge - Lower Right */}
@@ -524,8 +598,8 @@ const TheoryQuiz: React.FC = () => {
           <div className="flex gap-2">
             {questions.map((_, index) => {
               const questionAnswer = answers.get(questions[index].id);
-              const isAnswered = questionAnswer && questionAnswer.selectedAnswers.length > 0;
-              
+              const answered = isAnswered(questions[index], questionAnswer);
+
               return (
                 <button
                   key={index}
@@ -533,7 +607,7 @@ const TheoryQuiz: React.FC = () => {
                   className={`w-8 h-8 rounded-full text-sm font-medium transition-colors cursor-pointer ${
                     index === currentQuestionIndex
                       ? 'bg-blue-500 text-white'
-                      : isAnswered
+                      : answered
                       ? 'bg-green-500/20 text-green-400 border border-green-500'
                       : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700'
                   }`}
