@@ -13,3 +13,6 @@ Questions are separated by tags, difficulty level, and according to which sectio
 
 ## 🛠 Language and Framework
 ![Tech Stack](https://skills-icons.vercel.app/api/icons?i=electron,typescript,tailwind,rust)
+
+## Update - 1 / 9
+Passed DSA LOL
