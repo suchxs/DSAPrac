@@ -26,9 +26,10 @@ const consoleLevelMap: Record<number, DevConsoleLevel> = {
 function resolveBackendPath(): string {
   const override = process.env.DSA_JUDGE_PATH;
   if (override && fs.existsSync(override)) return override;
-  const devPath = path.resolve(__dirname, '../../rust-backend/target/debug/dsa-judge.exe');
+  const binaryName = process.platform === 'win32' ? 'dsa-judge.exe' : 'dsa-judge';
+  const devPath = path.resolve(__dirname, `../../rust-backend/target/debug/${binaryName}`);
   if (fs.existsSync(devPath)) return devPath;
-  const relPath = path.resolve(__dirname, '../../rust-backend/target/release/dsa-judge.exe');
+  const relPath = path.resolve(__dirname, `../../rust-backend/target/release/${binaryName}`);
   if (fs.existsSync(relPath)) return relPath;
   return devPath;
 }
@@ -1052,7 +1053,7 @@ function createWindow() {
   // macOS dock icon (BrowserWindow.icon is ignored on macOS for dock)
   if (process.platform === 'darwin' && fs.existsSync(iconPath)) {
     try {
-      app.dock.setIcon(nativeImage.createFromPath(iconPath));
+      app.dock?.setIcon(nativeImage.createFromPath(iconPath));
     } catch (e) {
       console.warn('Failed to set dock icon:', e);
     }
