@@ -1,6 +1,6 @@
 # DSAPrac (CIS2101 Reviewer)
 Reviewer App for DSA <br>
-<br> The Goal is to simulate Codechum practical exams with the time constraint so that I won't choke <br> <br>
+<br> The Goal is to simulate Major DSA Exams (Theory and Practical) with the actual time constraint <br> <br>
 Questions are separated by tags, difficulty level, and according to which section they are discussed in the course **(Section 1 - 3)**
 >I hope this helps people pass DSA :)
 
