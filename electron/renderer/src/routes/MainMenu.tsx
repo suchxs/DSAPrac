@@ -12,9 +12,14 @@ interface ProgressData {
 const MainMenu: React.FC = () => {
   const navigate = useNavigate();
   const [progress, setProgress] = useState<ProgressData | null>(null);
+  const [runtimeInfo, setRuntimeInfo] = useState<{ version: string; os: string }>({
+    version: '1.0',
+    os: 'Unknown',
+  });
 
   useEffect(() => {
     loadProgress();
+    loadRuntimeInfo();
     const unsubscribe = window.api.onDataRefresh(({ progress }) => {
       setProgress(progress);
     });
@@ -29,6 +34,15 @@ const MainMenu: React.FC = () => {
       setProgress(data);
     } catch (error) {
       console.error('Failed to load progress:', error);
+    }
+  };
+
+  const loadRuntimeInfo = async () => {
+    try {
+      const data = await window.api.getRuntimeInfo();
+      setRuntimeInfo({ version: data.version, os: data.os });
+    } catch (error) {
+      console.error('Failed to load runtime info:', error);
     }
   };
 
@@ -181,7 +195,7 @@ const MainMenu: React.FC = () => {
 
       {/* Version Number - Bottom Left */}
       <div className="fixed bottom-3 left-3 text-sm text-white/40 font-medium">
-        BETA v1.0
+        {`BETA v${runtimeInfo.version} (${runtimeInfo.os})`}
       </div>
     </div>
   );
