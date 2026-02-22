@@ -5,6 +5,7 @@ import { Play, Send, Save, X, ArrowLeft } from 'lucide-react';
 import Terminal from '../components/Terminal';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import ImageLightbox from '../components/ImageLightbox';
 import '@xterm/xterm/css/xterm.css';
 
 interface CodeFile {
@@ -121,6 +122,7 @@ const PracticalProblemSolver: React.FC = () => {
   const [historyEntries, setHistoryEntries] = useState<HistoryEntry[]>([]);
   const [showRestoreModal, setShowRestoreModal] = useState(false);
   const [pendingRestoreEntry, setPendingRestoreEntry] = useState<HistoryEntry | null>(null);
+  const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
 
   const formatTimestamp = (ts: string) => {
     try {
@@ -1144,7 +1146,8 @@ const PracticalProblemSolver: React.FC = () => {
                     key={index}
                     src={imgUrl}
                     alt={`Problem reference ${index + 1}`}
-                    className="w-full rounded border border-zinc-700"
+                    className="w-full rounded border border-zinc-700 cursor-pointer"
+                    onClick={() => setExpandedImageUrl(imgUrl)}
                   />
                 ))}
               </div>
@@ -1155,7 +1158,8 @@ const PracticalProblemSolver: React.FC = () => {
               <img
                 src={question.imageDataUrl}
                 alt="Problem reference"
-                className="w-full rounded border border-zinc-700"
+                className="w-full rounded border border-zinc-700 cursor-pointer"
+                onClick={() => setExpandedImageUrl(question.imageDataUrl || null)}
               />
             </div>
           )}
@@ -1701,6 +1705,12 @@ const PracticalProblemSolver: React.FC = () => {
           </div>
         </div>
       )}
+
+      <ImageLightbox
+        imageUrl={expandedImageUrl}
+        alt="Practical reference image"
+        onClose={() => setExpandedImageUrl(null)}
+      />
     </div>
   );
 };

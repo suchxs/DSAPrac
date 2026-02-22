@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useLocation, useNavigate } from 'react-router-dom';
+import ImageLightbox from '../components/ImageLightbox';
 
 interface TheoreticalQuestionRecord {
   id: string;
@@ -62,6 +63,7 @@ const TheoryQuiz: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [showExitModal, setShowExitModal] = useState(false);
   const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [expandedImageUrl, setExpandedImageUrl] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -608,7 +610,8 @@ const TheoryQuiz: React.FC = () => {
                       <img
                         src={url}
                         alt={`Question image ${imgIndex + 1}`}
-                        className="max-h-48 w-full rounded-lg object-contain bg-neutral-950 border border-neutral-800"
+                        className="max-h-48 w-full rounded-lg object-contain bg-neutral-950 border border-neutral-800 cursor-pointer"
+                        onClick={() => setExpandedImageUrl(url)}
                       />
                       {currentQuestion.imageDataUrls!.length > 1 && (
                         <span className="text-xs text-neutral-500 text-center">Image {imgIndex + 1}</span>
@@ -830,6 +833,12 @@ const TheoryQuiz: React.FC = () => {
           </>
         )}
       </div>
+
+      <ImageLightbox
+        imageUrl={expandedImageUrl}
+        alt="Theory question image"
+        onClose={() => setExpandedImageUrl(null)}
+      />
     </div>
   );
 };

@@ -138,3 +138,87 @@ body {
   -webkit-app-region: no-drag;
 }
 
+@keyframes lightboxOverlayIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes lightboxOverlayOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes lightboxImageIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes lightboxImageBounceOut {
+  0% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+.image-lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.78);
+}
+
+.image-lightbox-overlay.is-open {
+  animation: lightboxOverlayIn 220ms ease-out forwards;
+}
+
+.image-lightbox-overlay.is-closing {
+  animation: lightboxOverlayOut 260ms ease-in forwards;
+}
+
+.image-lightbox-image {
+  max-width: min(96vw, 1200px);
+  max-height: 90vh;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  object-fit: contain;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.image-lightbox-image.is-open {
+  animation: lightboxImageIn 240ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.image-lightbox-image.is-closing {
+  animation: lightboxImageBounceOut 260ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
