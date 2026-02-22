@@ -2,6 +2,7 @@
 export interface ElectronAPI {
   ping: () => string;
   exitApp: () => void;
+  getRuntimeInfo: () => Promise<{ version: string; os: string; platform: string }>;
   openSettings: () => void;
   openPractice: () => void;
   openExam: () => void;

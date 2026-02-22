@@ -1113,6 +1113,49 @@ function startBackend() {
 }
 
 app.whenReady().then(() => {
+  const appVersion = (() => {
+    const candidatePaths = [
+      path.resolve(__dirname, '../package.json'),
+      path.resolve(process.cwd(), 'package.json'),
+      path.join(app.getAppPath(), 'package.json'),
+    ];
+
+    for (const packageJsonPath of candidatePaths) {
+      try {
+        if (!fs.existsSync(packageJsonPath)) {
+          continue;
+        }
+        const raw = fs.readFileSync(packageJsonPath, 'utf8');
+        const parsed = JSON.parse(raw) as { name?: string; version?: string };
+        if (
+          parsed.name?.toLowerCase() === 'dsaprac' &&
+          parsed.version &&
+          typeof parsed.version === 'string'
+        ) {
+          return parsed.version;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    console.warn('[Startup] Falling back to app.getVersion(); DSAPrac package.json not found.');
+    return app.getVersion();
+  })();
+
+  const platformLabel = (() => {
+    switch (process.platform) {
+      case 'win32':
+        return 'Windows';
+      case 'darwin':
+        return 'MacOS';
+      case 'linux':
+        return 'Linux';
+      default:
+        return process.platform;
+    }
+  })();
+
   // Remove menu bar
   Menu.setApplicationMenu(null);
   
@@ -1147,6 +1190,14 @@ app.whenReady().then(() => {
   });
 
   // Settings IPC
+  ipcMain.handle('app:getRuntimeInfo', () => {
+    return {
+      version: appVersion,
+      os: platformLabel,
+      platform: process.platform,
+    };
+  });
+
   ipcMain.handle('settings:get', () => {
     return readSettings();
   });
@@ -1189,7 +1240,7 @@ app.whenReady().then(() => {
           ],
         };
       case 'version':
-        return { ok: true, output: [`DSAPrac ${app.getVersion()}`] };
+        return { ok: true, output: [`DSAPrac ${appVersion}`] };
       case 'ping':
         return { ok: true, output: ['pong'] };
       case 'backend': {
