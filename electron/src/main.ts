@@ -3434,15 +3434,50 @@ app.whenReady().then(() => {
                   let filesWithProgress: CodeFilePayload[] = parsedFiles.map((pf: CodeFilePayload) => ({ ...pf }));
                   if (fs.existsSync(savedProgressFile)) {
                     try {
-                      const savedFiles = JSON.parse(fs.readFileSync(savedProgressFile, 'utf-8'));
-                      // Merge saved content into parsedFiles
+                      const savedFilesRaw = JSON.parse(fs.readFileSync(savedProgressFile, 'utf-8'));
+                      const savedFiles: { filename: string; content: string }[] = Array.isArray(savedFilesRaw)
+                        ? savedFilesRaw.filter((sf: any) => sf && typeof sf.filename === 'string')
+                        : [];
+
+                      const templateByFilename = new Map(parsedFiles.map((pf) => [pf.filename, pf]));
+                      const savedByFilename = new Map(savedFiles.map((sf) => [sf.filename, sf]));
+
+                      // Merge saved content into authored files first
                       filesWithProgress = parsedFiles.map((pf: CodeFilePayload) => {
-                        const savedFile = savedFiles.find((sf: { filename: string; content: string }) => sf.filename === pf.filename);
-                        if (savedFile && savedFile.content) {
+                        const savedFile = savedByFilename.get(pf.filename);
+                        if (savedFile && typeof savedFile.content === 'string') {
                           return { ...pf, content: savedFile.content };
                         }
                         return pf;
                       });
+
+                      // Keep user-created files that are not part of the authored template
+                      const defaultLanguage = parsedFiles[0]?.language === 'cpp'
+                        ? 'cpp'
+                        : parsedFiles[0]?.language === 'rust'
+                          ? 'rust'
+                          : 'c';
+
+                      const inferLanguage = (filename: string): 'c' | 'cpp' | 'rust' => {
+                        const lower = filename.toLowerCase();
+                        if (lower.endsWith('.cpp') || lower.endsWith('.cc') || lower.endsWith('.cxx')) return 'cpp';
+                        if (lower.endsWith('.rs')) return 'rust';
+                        if (lower.endsWith('.c')) return 'c';
+                        if (lower.endsWith('.h') || lower.endsWith('.hpp')) return defaultLanguage;
+                        return defaultLanguage;
+                      };
+
+                      for (const savedFile of savedFiles) {
+                        if (templateByFilename.has(savedFile.filename)) continue;
+                        filesWithProgress.push({
+                          filename: savedFile.filename,
+                          content: typeof savedFile.content === 'string' ? savedFile.content : '',
+                          isLocked: false,
+                          isAnswerFile: false,
+                          isHidden: false,
+                          language: inferLanguage(savedFile.filename),
+                        });
+                      }
                     } catch (err) {
                       console.error('Failed to load saved progress:', err);
                     }
